@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Engine Tests — Retirement Calculator</title>
+  <style>
+    body { font-family: -apple-system, "Segoe UI", Roboto, sans-serif; margin: 2rem; }
+    .pass { color: #16a34a; } .fail { color: #dc2626; font-weight: 700; }
+    li { margin: .25rem 0; } #summary { font-weight: 700; margin-top: 1rem; }
+  </style>
+</head>
+<body>
+  <h1>Engine Tests</h1>
+  <p>Open this file in a browser. All checks should pass (green).</p>
+  <ul id="results"></ul>
+  <div id="summary"></div>
+
+  <script src="../js/engine.js"></script>
+  <script>
+    var now = { month: 1, year: 2026 };
+    var results = document.getElementById('results');
+    var pass = 0, fail = 0;
+    function check(name, cond) {
+      var li = document.createElement('li');
+      li.className = cond ? 'pass' : 'fail';
+      li.textContent = (cond ? 'PASS: ' : 'FAIL: ') + name;
+      results.appendChild(li);
+      cond ? pass++ : fail++;
+    }
+    function approx(a, b, tol) { return Math.abs(a - b) <= tol; }
+
+    var set = { personA: { birthMonth: 1, birthYear: 1976 }, assumptions: { returnPct: 6, inflationPct: 3, ssColaPct: 0, effectiveTaxPct: 0 }, currentSavings: 0 };
+
+    // 1. Pure compounding
+    var r1 = RetEngine.projectScenario({ retireAge: 90, monthlyContribution: 0, startingBalance: 100000, retirementSpending: 0 }, set, { now: now });
+    var row2036 = r1.rows.filter(function (x) { return x.year === 2036; })[0];
+    var exp = 100000 * Math.pow(1.06, 10);
+    check('pure compound ~10yr within 1%', approx(row2036.balance, exp, exp * 0.01));
+
+    // 2. Lump sum raises balance
+    var base = { retireAge: 90, monthlyContribution: 0, startingBalance: 0, retirementSpending: 0 };
+    var rl = RetEngine.projectScenario(Object.assign({}, base, { lumpSums: [{ month: 8, year: 2026, amount: 50000 }] }), set, { now: now });
+    var rb = RetEngine.projectScenario(base, set, { now: now });
+    check('lump sum increases balance', rl.summary.finalBalance > rb.summary.finalBalance + 49000);
+
+    // 3. Depletion fires
+    var r3 = RetEngine.projectScenario({ retireAge: 50, monthlyContribution: 0, startingBalance: 100000, retirementSpending: 5000 }, set, { now: now });
+    check('depletion detected', r3.summary.depletionAge !== null);
+
+    // 4. SS preserves balance
+    var setSS = { personA: { birthMonth: 1, birthYear: 1964, ss: { 62: 2500, 67: 3500 } }, assumptions: { returnPct: 5, inflationPct: 2, ssColaPct: 0, effectiveTaxPct: 0 }, currentSavings: 0 };
+    var setNoSS = { personA: { birthMonth: 1, birthYear: 1964, ss: {} }, assumptions: setSS.assumptions, currentSavings: 0 };
+    var sc4 = { retireAge: 62, claimAgeA: 62, monthlyContribution: 0, startingBalance: 500000, retirementSpending: 4000 };
+    var r4a = RetEngine.projectScenario(sc4, setSS, { now: now });
+    var r4b = RetEngine.projectScenario(sc4, setNoSS, { now: now });
+    check('SS income preserves more balance', r4a.summary.finalBalance > r4b.summary.finalBalance);
+
+    // 5. Contribution change grows more
+    var r5 = RetEngine.projectScenario({ retireAge: 90, monthlyContribution: 1000, startingBalance: 0, retirementSpending: 0, contributionChanges: [{ month: 1, year: 2030, newMonthly: 3000 }] }, set, { now: now });
+    var r5flat = RetEngine.projectScenario({ retireAge: 90, monthlyContribution: 1000, startingBalance: 0, retirementSpending: 0 }, set, { now: now });
+    check('contribution increase grows balance', r5.summary.finalBalance > r5flat.summary.finalBalance);
+
+    document.getElementById('summary').textContent = pass + ' passed, ' + fail + ' failed';
+  </script>
+</body>
+</html>

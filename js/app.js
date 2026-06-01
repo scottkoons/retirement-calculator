@@ -9,9 +9,13 @@
   var state = S.load();
   state.now = { month: new Date().getMonth() + 1, year: new Date().getFullYear() };
   var chart = null;
-  // Dashboard accent palette — bright lines that read on the dark grid.
-  var CHART_COLORS = ['#2dd4bf', '#34d399', '#fbbf24', '#fb7185', '#22d3ee', '#a3e635', '#f472b6'];
-  var CHART_INK = '#aab6c8', CHART_GRID = 'rgba(43, 53, 74, 0.6)', CHART_PANEL = '#0d1219';
+  // Dashboard accent palette — distinct lines that read on either theme.
+  var CHART_COLORS = ['#14b8a6', '#f59e0b', '#6366f1', '#ec4899', '#0891b2', '#84cc16', '#ef4444'];
+  // Chart text/grid/panel pull from the active theme's CSS variables.
+  function themeVar(name, fallback) {
+    var v = getComputedStyle(document.documentElement).getPropertyValue(name);
+    return (v && v.trim()) || fallback;
+  }
 
   function genId() { return 'sc_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 7); }
 
@@ -100,27 +104,31 @@
       };
     });
 
+    var INK = themeVar('--muted', '#aab6c8');
+    var GRID = themeVar('--line', '#20293a');
+    var PANEL = themeVar('--panel', '#0d1219');
+    var TITLE = themeVar('--ink', '#e6edf6');
     chart = new Chart(canvas.getContext('2d'), {
       type: 'line',
       data: { datasets: datasets },
       options: {
         responsive: true, maintainAspectRatio: false,
-        color: CHART_INK,
+        color: INK,
         font: { family: "'JetBrains Mono', monospace" },
         interaction: { mode: 'nearest', intersect: false },
         scales: {
-          x: { type: 'linear', title: { display: true, text: 'YOUR AGE', color: CHART_INK },
-               ticks: { stepSize: 5, color: CHART_INK }, grid: { color: CHART_GRID, drawTicks: false },
-               border: { color: CHART_GRID } },
-          y: { title: { display: true, text: real ? "PORTFOLIO BALANCE (TODAY'S $)" : 'PORTFOLIO BALANCE', color: CHART_INK },
-               ticks: { color: CHART_INK, callback: function (v) { return '$' + (v / 1000).toLocaleString() + 'k'; } },
-               grid: { color: CHART_GRID, drawTicks: false }, border: { color: CHART_GRID } }
+          x: { type: 'linear', title: { display: true, text: 'YOUR AGE', color: INK },
+               ticks: { stepSize: 5, color: INK }, grid: { color: GRID, drawTicks: false },
+               border: { color: GRID } },
+          y: { title: { display: true, text: real ? "PORTFOLIO BALANCE (TODAY'S $)" : 'PORTFOLIO BALANCE', color: INK },
+               ticks: { color: INK, callback: function (v) { return '$' + (v / 1000).toLocaleString() + 'k'; } },
+               grid: { color: GRID, drawTicks: false }, border: { color: GRID } }
         },
         plugins: {
-          legend: { position: 'bottom', labels: { color: CHART_INK, usePointStyle: true, pointStyle: 'line', boxWidth: 24, padding: 16 } },
+          legend: { position: 'bottom', labels: { color: INK, usePointStyle: true, pointStyle: 'line', boxWidth: 24, padding: 16 } },
           tooltip: {
-            backgroundColor: CHART_PANEL, borderColor: 'rgba(45,212,191,0.4)', borderWidth: 1,
-            titleColor: '#e6edf6', bodyColor: '#aab6c8', padding: 10, cornerRadius: 6,
+            backgroundColor: PANEL, borderColor: themeVar('--cyan', '#2dd4bf'), borderWidth: 1,
+            titleColor: TITLE, bodyColor: INK, padding: 10, cornerRadius: 6,
             callbacks: { label: function (c) { return c.dataset.label + ': ' + UI.fmtMoney(c.parsed.y) + ' (age ' + Math.round(c.parsed.x) + ')'; } }
           }
         }
@@ -241,9 +249,24 @@
         break;
       }
       case 'set-basis': state.dollarBasis = btn.dataset.basis; persist(); render(); break;
+      case 'sort': sortList(btn.dataset.sortList, btn.dataset.sortKey); break;
+      case 'toggle-theme': toggleTheme(); break;
       case 'backup-download': S.exportFile(stripState()); break;
       case 'backup-restore': document.getElementById('restore-input').click(); break;
     }
+  }
+
+  function applyTheme() {
+    var t = state.theme === 'light' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', t);
+    var ico = document.querySelector('.theme-ico');
+    // show the icon for the theme you'd switch TO
+    if (ico) ico.textContent = t === 'light' ? '🌙' : '☀';
+    if (chart && state.activeTab === 'dashboard') { drawChart(); }
+  }
+  function toggleTheme() {
+    state.theme = (state.theme === 'light') ? 'dark' : 'light';
+    persist(); applyTheme();
   }
 
   function defaultRow(list) {
@@ -281,6 +304,80 @@
     persist(); render();
   }
 
+  /* --------------------------- sort & drag rows --------------------------- */
+  // Sort comparators per (list,key). Dates compare by absolute month.
+  function sortKeyVal(list, item, key) {
+    if (key === 'date') return absOf(item.month, item.year);
+    if (key === 'start') return absOf(item.startMonth, item.startYear);
+    if (key === 'end') return item.endYear == null || item.endYear === '' ? Infinity : absOf(item.endMonth || 12, item.endYear);
+    if (key === 'age') return absOf(item.month, item.year);
+    if (key === 'amount') return parseFloat(item.amount) || 0;
+    if (key === 'monthly') return parseFloat(item.monthly) || 0;
+    if (key === 'label') return (item.label || '').toLowerCase();
+    return 0;
+  }
+  function absOf(m, y) {
+    if (y == null || y === '') return Infinity;
+    return (+y) * 12 + ((+m || 1) - 1);
+  }
+  function sortList(list, key) {
+    var s = editingScenario();
+    if (!s || !s[list]) return;
+    state.sortBy = state.sortBy || {};
+    var cur = state.sortBy[list];
+    var dir = (cur && cur.key === key && cur.dir === 'asc') ? 'desc' : 'asc';
+    state.sortBy[list] = { key: key, dir: dir };
+    s[list].sort(function (a, b) {
+      var av = sortKeyVal(list, a, key), bv = sortKeyVal(list, b, key);
+      if (av < bv) return dir === 'asc' ? -1 : 1;
+      if (av > bv) return dir === 'asc' ? 1 : -1;
+      return 0;
+    });
+    persist(); render();
+  }
+
+  // HTML5 drag-and-drop reordering for Lump Sums and Extra Income rows.
+  var dragCtx = null;
+  function onDragStart(e) {
+    var row = e.target.closest('.trow[draggable="true"]');
+    if (!row) return;
+    dragCtx = { list: row.dataset.list, from: +row.dataset.index };
+    row.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+    try { e.dataTransfer.setData('text/plain', String(dragCtx.from)); } catch (x) {}
+  }
+  function onDragOver(e) {
+    if (!dragCtx) return;
+    var row = e.target.closest('.trow[draggable="true"]');
+    if (!row || row.dataset.list !== dragCtx.list) return;
+    e.preventDefault();
+    document.querySelectorAll('.trow.drop-target').forEach(function (r) { r.classList.remove('drop-target'); });
+    row.classList.add('drop-target');
+  }
+  function onDrop(e) {
+    if (!dragCtx) return;
+    var row = e.target.closest('.trow[draggable="true"]');
+    if (!row || row.dataset.list !== dragCtx.list) { cleanupDrag(); return; }
+    e.preventDefault();
+    var to = +row.dataset.index;
+    moveRow(dragCtx.list, dragCtx.from, to);
+    cleanupDrag();
+  }
+  function cleanupDrag() {
+    document.querySelectorAll('.dragging, .drop-target').forEach(function (r) { r.classList.remove('dragging', 'drop-target'); });
+    dragCtx = null;
+  }
+  function moveRow(list, from, to) {
+    var s = editingScenario();
+    if (!s || !s[list] || from === to) return;
+    var arr = s[list];
+    var item = arr.splice(from, 1)[0];
+    arr.splice(to, 0, item);
+    // Manual reorder clears any active column sort for that list.
+    if (state.sortBy && state.sortBy[list]) delete state.sortBy[list];
+    persist(); render();
+  }
+
   function stripState() { var c = JSON.parse(JSON.stringify(state)); delete c.now; return c; }
 
   function onRestore(e) {
@@ -306,6 +403,14 @@
       else onFieldChange(e); // selects & checkboxes
     });
     document.addEventListener('click', onClick);
+    document.addEventListener('dragstart', onDragStart);
+    document.addEventListener('dragover', onDragOver);
+    document.addEventListener('drop', onDrop);
+    document.addEventListener('dragend', cleanupDrag);
+    if (!state.theme) {
+      state.theme = (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) ? 'light' : 'dark';
+    }
+    applyTheme();
     render();
     flagSaved(true);
   }

@@ -133,6 +133,7 @@
           '<span class="end-hint">blank = until retirement</span>'
         : monthYear('contributionPeriods.' + i + '.end', p.endMonth, p.endYear, 'retire');
       return '<div class="trow contrib-row">' +
+        '<span class="td td-grip locked" title="Contributions sort by date automatically">↕</span>' +
         '<span class="td td-name">' + textInput('scenario', 'contributionPeriods.' + i + '.name', p.name, 'Name (e.g. After raise)', 'grow') + '</span>' +
         '<span class="td td-date">' + monthYear('contributionPeriods.' + i + '.start', p.startMonth, p.startYear) + '</span>' +
         '<span class="td td-date">' + endCell + '</span>' +
@@ -145,8 +146,9 @@
 
     return '<div class="ttable contrib-table">' +
       '<div class="trow thead">' +
+        '<span class="td td-grip"></span>' +
         '<span class="td td-name">Name</span>' +
-        '<span class="td td-date">Start</span>' +
+        '<span class="td td-date">Start ▲</span>' +
         '<span class="td td-date">End</span>' +
         '<span class="td td-amt">Monthly $</span>' +
         '<span class="td td-num">Months</span>' +
@@ -156,7 +158,16 @@
     '</div>';
   }
 
-  // Lump Sum Events — Name · Date · Age · Amount, with a total row.
+  // Drag handle + a sortable header cell helper.
+  function handle() { return '<span class="td td-grip" title="Drag to reorder">⠿</span>'; }
+  function sortHead(list, key, label, cls, state) {
+    var sb = state.sortBy && state.sortBy[list];
+    var arrow = '';
+    if (sb && sb.key === key) arrow = sb.dir === 'asc' ? ' ▲' : ' ▼';
+    return '<span class="td ' + cls + ' sortable" data-action="sort" data-sort-list="' + list + '" data-sort-key="' + key + '">' + label + arrow + '</span>';
+  }
+
+  // Lump Sum Events — Grip · Name · Date · Age · Amount, draggable + sortable.
   function lumpTable(state, s) {
     var E = global.RetEngine;
     var lumps = s.lumpSums || [];
@@ -166,7 +177,8 @@
     var body = lumps.map(function (l, i) {
       total += num(l.amount);
       var absM = (l.year != null && l.year !== '') ? E._helpers.toAbs(num(l.month) || 1, num(l.year)) : null;
-      return '<div class="trow lump-row">' +
+      return '<div class="trow lump-row" draggable="true" data-list="lumpSums" data-index="' + i + '">' +
+        handle() +
         '<span class="td td-name">' + textInput('scenario', 'lumpSums.' + i + '.label', l.label, 'Name (e.g. Sale of business)', 'grow') + '</span>' +
         '<span class="td td-date">' + monthYear('lumpSums.' + i + '.', l.month, l.year) + '</span>' +
         '<span class="td td-num mono age">' + ageAt(state, absM) + '</span>' +
@@ -177,13 +189,15 @@
 
     return '<div class="ttable lump-table">' +
       '<div class="trow thead">' +
-        '<span class="td td-name">Name</span>' +
-        '<span class="td td-date">Date</span>' +
-        '<span class="td td-num">Age</span>' +
-        '<span class="td td-amt">Amount</span>' +
+        '<span class="td td-grip"></span>' +
+        sortHead('lumpSums', 'label', 'Name', 'td-name', state) +
+        sortHead('lumpSums', 'date', 'Date', 'td-date', state) +
+        sortHead('lumpSums', 'age', 'Age', 'td-num', state) +
+        sortHead('lumpSums', 'amount', 'Amount', 'td-amt', state) +
         '<span class="td td-x"></span>' +
       '</div>' + body +
       '<div class="trow tfoot">' +
+        '<span class="td td-grip"></span>' +
         '<span class="td td-name">Total lump sums</span>' +
         '<span class="td td-date"></span><span class="td td-num"></span>' +
         '<span class="td td-amt mono">' + fmtMoney(total) + '</span>' +
@@ -192,22 +206,32 @@
     '</div>';
   }
 
-  function incomeRows(s) {
-    if (!(s.extraIncome || []).length) return '<p class="muted small">None yet.</p>';
-    return s.extraIncome.map(function (e, i) {
-      return '<div class="row wrap">' +
-        textInput('scenario', 'extraIncome.' + i + '.label', e.label, 'Source (e.g. Business)', 'grow') +
-        moneyInput('scenario', 'extraIncome.' + i + '.monthly', e.monthly, '$/mo') +
-        '<span class="lbl">from</span>' +
-        monthSelect('scenario', 'extraIncome.' + i + '.startMonth', e.startMonth) +
-        yearInput('scenario', 'extraIncome.' + i + '.startYear', e.startYear) +
-        '<span class="lbl">to</span>' +
-        monthSelect('scenario', 'extraIncome.' + i + '.endMonth', e.endMonth) +
-        yearInput('scenario', 'extraIncome.' + i + '.endYear', e.endYear, 'never') +
-        '<label class="chk"><input type="checkbox" data-scope="scenario" data-path="extraIncome.' + i + '.taxable"' + (e.taxable ? ' checked' : '') + '> taxable</label>' +
+  // Extra Income — Grip · Source · Monthly · From · To · Taxable, draggable + sortable.
+  function incomeTable(state, s) {
+    var inc = s.extraIncome || [];
+    if (!inc.length) return '<p class="muted small">No extra income yet. Add things like a pension, business income, or rental income.</p>';
+    var body = inc.map(function (e, i) {
+      return '<div class="trow income-row" draggable="true" data-list="extraIncome" data-index="' + i + '">' +
+        handle() +
+        '<span class="td td-name">' + textInput('scenario', 'extraIncome.' + i + '.label', e.label, 'Source (e.g. Pension)', 'grow') + '</span>' +
+        '<span class="td td-amt">' + moneyInput('scenario', 'extraIncome.' + i + '.monthly', e.monthly, '$/mo') + '</span>' +
+        '<span class="td td-date">' + monthYear('extraIncome.' + i + '.start', e.startMonth, e.startYear) + '</span>' +
+        '<span class="td td-date">' + monthYear('extraIncome.' + i + '.end', e.endMonth, e.endYear, 'never') + '</span>' +
+        '<span class="td td-tax"><label class="chk"><input type="checkbox" data-scope="scenario" data-path="extraIncome.' + i + '.taxable"' + (e.taxable ? ' checked' : '') + '> tax</label></span>' +
         '<button class="btn-x" data-action="remove-row" data-list="extraIncome" data-index="' + i + '">✕</button>' +
       '</div>';
     }).join('');
+    return '<div class="ttable income-table">' +
+      '<div class="trow thead">' +
+        '<span class="td td-grip"></span>' +
+        sortHead('extraIncome', 'label', 'Source', 'td-name', state) +
+        sortHead('extraIncome', 'monthly', 'Monthly $', 'td-amt', state) +
+        sortHead('extraIncome', 'start', 'From', 'td-date', state) +
+        sortHead('extraIncome', 'end', 'To', 'td-date', state) +
+        '<span class="td td-tax">Taxable</span>' +
+        '<span class="td td-x"></span>' +
+      '</div>' + body +
+    '</div>';
   }
 
   // Update only the computed (non-input) cells in the contribution + lump tables
@@ -257,7 +281,8 @@
 
       '<div class="sub"><div class="sub-head"><h4>Extra income</h4>' +
         '<button class="btn small" data-action="add-row" data-list="extraIncome">+ Add income</button></div>' +
-        '<div class="rows">' + incomeRows(s) + '</div></div>' +
+        incomeTable(state, s) +
+        '<p class="muted small">Recurring income in retirement — pension, rental, business. Tick "tax" if it\'s taxable. Leave "To" blank for lifetime income.</p></div>' +
 
       '<div id="editor-summary" class="summary-box">' + renderMiniSummary(state, s) + '</div>' +
     '</div>';

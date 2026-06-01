@@ -208,6 +208,13 @@
         rerenderEditor();
         return;
       }
+      // Same no-overlap reshape for return phases when From/To age is committed.
+      if (e.type === 'change' && /^returnPhases\.\d+\.(from|to)Age$/.test(t.dataset.path)) {
+        s.returnPhases = global.RetEngine.clampReturnPhases(s.returnPhases);
+        persist();
+        rerenderEditor();
+        return;
+      }
     }
     persist();
     refreshLive();
@@ -274,7 +281,28 @@
     if (list === 'lumpSums') return { month: now.month, year: now.year + 1, amount: '', label: '' };
     if (list === 'contributionPeriods') return contribDefault();
     if (list === 'extraIncome') return { label: '', monthly: '', startMonth: now.month, startYear: now.year, endMonth: 12, endYear: '', taxable: false, colaPct: 0 };
+    if (list === 'returnPhases') return returnPhaseDefault();
     return {};
+  }
+
+  // A new return phase starts where the latest phase ends (or at the person's
+  // current age), with a blank "to age" so it runs to the end until another follows.
+  function returnPhaseDefault() {
+    var s = editingScenario();
+    var base = (state.settings.assumptions || {}).returnPct;
+    var pa = state.settings.personA || {};
+    var nowAbs = global.RetEngine._helpers.toAbs(state.now.month, state.now.year);
+    var curAge = pa.birthYear ? Math.floor((nowAbs - (pa.birthYear * 12 + ((pa.birthMonth || 1) - 1))) / 12) : 50;
+    var fromAge = curAge;
+    if (s && (s.returnPhases || []).length) {
+      var maxTo = -Infinity;
+      s.returnPhases.forEach(function (p) {
+        var t = (p.toAge == null || p.toAge === '') ? (p.fromAge != null ? +p.fromAge + 10 : -Infinity) : +p.toAge;
+        if (t > maxTo) maxTo = t;
+      });
+      if (isFinite(maxTo)) fromAge = maxTo;
+    }
+    return { label: '', fromAge: fromAge, toAge: '', returnPct: base != null ? base : 6 };
   }
 
   // A new contribution period starts the month after the latest existing period

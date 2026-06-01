@@ -127,6 +127,40 @@
     return inflate(base, ssColaPct, absMonth - nowAbs);
   }
 
+  // Return % in effect at a given age, from a list of phases. Each phase has
+  // fromAge (inclusive) and an optional toAge (exclusive); the matching phase's
+  // returnPct wins, otherwise the scenario's base return is used. Phases are a
+  // non-overlapping timeline by age, mirroring contribution periods.
+  function returnRateAt(ageYears, phases, baseReturnPct) {
+    var list = phases || [];
+    for (var i = 0; i < list.length; i++) {
+      var p = list[i];
+      if (!has(p.returnPct)) continue;
+      var from = has(p.fromAge) ? num(p.fromAge) : -Infinity;
+      var to = has(p.toAge) ? num(p.toAge) : Infinity;
+      if (ageYears >= from && ageYears < to) return num(p.returnPct);
+    }
+    return baseReturnPct;
+  }
+
+  // Reshape return phases so they don't overlap by age: sort by fromAge, and clamp
+  // each phase's toAge down to the next phase's fromAge. Mirrors contribution clamp.
+  function clampReturnPhases(phases) {
+    var list = (phases || []).slice();
+    list.sort(function (a, b) {
+      var fa = has(a.fromAge) ? num(a.fromAge) : -Infinity;
+      var fb = has(b.fromAge) ? num(b.fromAge) : -Infinity;
+      return fa === fb ? 0 : (fa < fb ? -1 : 1);
+    });
+    for (var i = 0; i < list.length - 1; i++) {
+      var nextFrom = has(list[i + 1].fromAge) ? num(list[i + 1].fromAge) : Infinity;
+      if (!isFinite(nextFrom)) continue;
+      var to = has(list[i].toAge) ? num(list[i].toAge) : Infinity;
+      if (to > nextFrom) list[i].toAge = nextFrom;
+    }
+    return list;
+  }
+
   function projectScenario(scenario, settings, opts) {
     opts = opts || {};
     settings = settings || {};
@@ -139,7 +173,9 @@
     var inflationPct = has(ov.inflationPct) ? num(ov.inflationPct) : num(a.inflationPct, 3);
     var ssColaPct = num(a.ssColaPct, inflationPct);
     var taxPct = num(a.effectiveTaxPct, 0);
-    var mRate = monthlyRate(returnPct);
+    var phases = scenario.returnPhases || [];
+    var usePhases = phases.length > 0;
+    var mRate = monthlyRate(returnPct); // fallback / no-phase rate
 
     var personA = settings.personA || {};
     var personB = settings.personB || {};
@@ -165,7 +201,9 @@
       var ageA = (absM - birthAbsA) / 12;
       var retired = absM >= retireAbs;
 
-      balance *= (1 + mRate);                    // 1. investment growth
+      // 1. investment growth — rate may vary by age via return phases
+      var rate = usePhases ? monthlyRate(returnRateAt(ageA, phases, returnPct)) : mRate;
+      balance *= (1 + rate);
       balance += lumpAt(absM, scenario.lumpSums); // 2. lump sums (any phase)
 
       var incomeGross = 0, incomeTaxable = 0, spending = 0;
@@ -252,6 +290,8 @@
     projectScenario: projectScenario,
     clampContributionPeriods: clampContributionPeriods,
     contributionStats: contributionStats,
+    clampReturnPhases: clampReturnPhases,
+    returnRateAt: returnRateAt,
     periodStartAbs: periodStartAbs, periodEndAbs: periodEndAbs,
     _helpers: { toAbs: toAbs, fromAbs: fromAbs, monthlyRate: monthlyRate, inflate: inflate, deflate: deflate, contributionAt: contributionAt, contributionFor: contributionFor, lumpAt: lumpAt }
   };

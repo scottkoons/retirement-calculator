@@ -60,6 +60,14 @@
     var r5flat = RetEngine.projectScenario({ retireAge: 90, monthlyContribution: 1000, startingBalance: 0, retirementSpending: 0 }, set, { now: now });
     check('contribution increase grows balance', r5.summary.finalBalance > r5flat.summary.finalBalance);
 
+    // 6. Return phases: lower late-life returns reduce final balance vs flat high return
+    var pset = { personA: { birthMonth: 1, birthYear: 1976 }, assumptions: { returnPct: 7, inflationPct: 0, ssColaPct: 0, effectiveTaxPct: 0 }, currentSavings: 100000 };
+    var phased = RetEngine.projectScenario({ retireAge: 95, retirementSpending: 0, startingBalance: 100000, returnPhases: [{ fromAge: 50, toAge: 65, returnPct: 7 }, { fromAge: 65, toAge: 75, returnPct: 6 }, { fromAge: 75, toAge: '', returnPct: 5 }] }, pset, { now: now });
+    var flat7 = RetEngine.projectScenario({ retireAge: 95, retirementSpending: 0, startingBalance: 100000 }, pset, { now: now });
+    check('return phases lower final balance vs flat 7%', phased.summary.finalBalance < flat7.summary.finalBalance);
+    check('returnRateAt resolves by age', RetEngine.returnRateAt(70, [{ fromAge: 65, toAge: 75, returnPct: 6 }], 7) === 6);
+    check('return phase clamp prevents overlap', RetEngine.clampReturnPhases([{ fromAge: 50, toAge: 70, returnPct: 7 }, { fromAge: 65, returnPct: 6 }])[0].toAge === 65);
+
     document.getElementById('summary').textContent = pass + ' passed, ' + fail + ' failed';
   </script>
 </body>

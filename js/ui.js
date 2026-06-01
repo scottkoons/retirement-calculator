@@ -234,6 +234,40 @@
     '</div>';
   }
 
+  // Return phases — investment return % by age range (a non-overlapping age
+  // timeline, like contributions). Grip is locked: phases auto-sort by fromAge.
+  function returnPhaseTable(state, s) {
+    var phases = s.returnPhases || [];
+    var baseReturn = (state.settings.assumptions || {}).returnPct;
+    if (!phases.length) {
+      return '<p class="muted small">Using a single return of <strong>' + esc(baseReturn != null ? baseReturn : 6) +
+        '%</strong> for all ages (from Settings). Add phases to model shifting to safer investments as you age.</p>';
+    }
+    var body = phases.map(function (p, i) {
+      var toVal = (p.toAge == null || p.toAge === '')
+        ? numInput('scenario', 'returnPhases.' + i + '.toAge', p.toAge, '95+', 'num')
+        : numInput('scenario', 'returnPhases.' + i + '.toAge', p.toAge, 'age', 'num');
+      return '<div class="trow phase-row">' +
+        '<span class="td td-grip locked" title="Phases sort by age automatically">↕</span>' +
+        '<span class="td td-name">' + textInput('scenario', 'returnPhases.' + i + '.label', p.label, 'Label (e.g. Growth / Glide / Safe)', 'grow') + '</span>' +
+        '<span class="td td-num2">' + numInput('scenario', 'returnPhases.' + i + '.fromAge', p.fromAge, 'age', 'num') + '</span>' +
+        '<span class="td td-num2">' + toVal + '</span>' +
+        '<span class="td td-amt">' + numInput('scenario', 'returnPhases.' + i + '.returnPct', p.returnPct, '%', 'pct') + '</span>' +
+        '<button class="btn-x" data-action="remove-row" data-list="returnPhases" data-index="' + i + '">✕</button>' +
+      '</div>';
+    }).join('');
+    return '<div class="ttable phase-table">' +
+      '<div class="trow thead">' +
+        '<span class="td td-grip"></span>' +
+        '<span class="td td-name">Phase</span>' +
+        '<span class="td td-num2">From age ▲</span>' +
+        '<span class="td td-num2">To age</span>' +
+        '<span class="td td-amt">Return %</span>' +
+        '<span class="td td-x"></span>' +
+      '</div>' + body +
+    '</div>';
+  }
+
   // Update only the computed (non-input) cells in the contribution + lump tables
   // so typing an amount reflects in Months/Total without rebuilding inputs.
   function refreshComputedCells(state, s) {
@@ -283,6 +317,11 @@
         '<button class="btn small" data-action="add-row" data-list="extraIncome">+ Add income</button></div>' +
         incomeTable(state, s) +
         '<p class="muted small">Recurring income in retirement — pension, rental, business. Tick "tax" if it\'s taxable. Leave "To" blank for lifetime income.</p></div>' +
+
+      '<div class="sub"><div class="sub-head"><h4>Investment return by age</h4>' +
+        '<button class="btn small" data-action="add-row" data-list="returnPhases">+ Add phase</button></div>' +
+        returnPhaseTable(state, s) +
+        '<p class="muted small">Model shifting to safer investments as you age — e.g. 7% from 50–65, 6% from 65–75, 5% after 75. Phases can\'t overlap; the previous phase ends where the next begins. Leave "To age" blank on the last phase to run to the end. With no phases, the single Settings return applies.</p></div>' +
 
       '<div id="editor-summary" class="summary-box">' + renderMiniSummary(state, s) + '</div>' +
     '</div>';

@@ -169,6 +169,22 @@ h1, h2, h3, h4 { font-family: var(--display); letter-spacing: -.01em; }
   box-shadow: 0 0 16px -4px rgba(45,212,191,.7);
 }
 
+/* Scenario pills (in the header, next to the brand) */
+.scenario-pills { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; min-width: 0; }
+.scenario-pill {
+  display: inline-flex; align-items: center; gap: .45rem;
+  border: 1px solid var(--line); background: var(--panel-2); color: var(--ink-soft);
+  padding: .34rem .7rem; border-radius: 999px; cursor: pointer;
+  font: inherit; font-size: .82rem; font-weight: 600; white-space: nowrap;
+  max-width: 200px; transition: border-color .14s ease, background .14s ease, color .14s ease;
+}
+.scenario-pill:hover { border-color: var(--line-strong); color: var(--ink); }
+.scenario-pill.active { border-color: var(--cyan); background: var(--cyan-dim); color: var(--ink); }
+.scenario-pill .pill-name { overflow: hidden; text-overflow: ellipsis; }
+.pill-dot { width: 9px; height: 9px; border-radius: 50%; flex: 0 0 auto; }
+.scenario-pill.add { color: var(--muted); border-style: dashed; }
+.scenario-pill.add:hover { color: var(--cyan); border-color: var(--cyan); }
+
 .backup { display: flex; gap: .4rem; align-items: center; }
 .btn-ico { font-size: .9em; line-height: 1; opacity: .85; }
 .btn.icon-only { padding: .42rem .55rem; }
@@ -187,6 +203,7 @@ h1, h2, h3, h4 { font-family: var(--display); letter-spacing: -.01em; }
 /* ============================ Layout ============================ */
 main { max-width: 1180px; margin: 1.75rem auto; padding: 0 1.5rem; }
 .tab-pane { animation: fade .2s ease both; }
+.tab-pane.no-anim { animation: none; }
 @keyframes fade { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
 
 .intro {

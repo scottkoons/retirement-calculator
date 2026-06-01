@@ -106,9 +106,12 @@
 
   /* ----------------------------- Scenarios tab ---------------------------- */
   // Compact MM/YYYY pair (month dropdown + year). The day is always the 1st.
-  function monthYear(pathBase, month, year, yearPlaceholder) {
-    return '<span class="my">' + monthSelect('scenario', pathBase + 'Month', month) +
-      yearInput('scenario', pathBase + 'Year', year, yearPlaceholder || 'YYYY') + '</span>';
+  // pathBase + 'Month'/'Year' by default (e.g. start -> startMonth/startYear).
+  // Pass mField/yField to bind explicit paths (lump sums use month/year).
+  function monthYear(pathBase, month, year, yearPlaceholder, mField, yField) {
+    return '<span class="my">' +
+      monthSelect('scenario', pathBase + (mField || 'Month'), month) +
+      yearInput('scenario', pathBase + (yField || 'Year'), year, yearPlaceholder || 'YYYY') + '</span>';
   }
   function ageAt(state, absMonth) {
     var pa = state.settings.personA || {};
@@ -189,7 +192,7 @@
       return '<div class="trow lump-row" draggable="true" data-list="lumpSums" data-index="' + i + '">' +
         handle() +
         '<span class="td td-name">' + textInput('scenario', 'lumpSums.' + i + '.label', l.label, 'Name (e.g. Sale of business)', 'grow') + '</span>' +
-        '<span class="td td-date">' + monthYear('lumpSums.' + i + '.', l.month, l.year) + '</span>' +
+        '<span class="td td-date">' + monthYear('lumpSums.' + i + '.', l.month, l.year, 'YYYY', 'month', 'year') + '</span>' +
         '<span class="td td-num mono age">' + ageAt(state, absM) + '</span>' +
         '<span class="td td-amt">' + moneyInput('scenario', 'lumpSums.' + i + '.amount', l.amount, 'Amount (+/-)') + '</span>' +
         '<button class="btn-x" data-action="remove-row" data-list="lumpSums" data-index="' + i + '">✕</button>' +

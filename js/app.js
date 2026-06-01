@@ -11,6 +11,13 @@
   var chart = null;
   // Dashboard accent palette — distinct lines that read on either theme.
   var CHART_COLORS = ['#14b8a6', '#f59e0b', '#6366f1', '#ec4899', '#0891b2', '#84cc16', '#ef4444'];
+  // Stable per-scenario accent colors (used for header pills and the chart).
+  var SCENARIO_COLORS = ['#8b5cf6', '#ec4899', '#14b8a6', '#f59e0b', '#3b82f6', '#84cc16', '#ef4444', '#06b6d4'];
+  function ensureScenarioColors() {
+    (state.scenarios || []).forEach(function (s, i) {
+      if (!s.color) s.color = SCENARIO_COLORS[i % SCENARIO_COLORS.length];
+    });
+  }
   // Chart text/grid/panel pull from the active theme's CSS variables.
   function themeVar(name, fallback) {
     var v = getComputedStyle(document.documentElement).getPropertyValue(name);
@@ -48,6 +55,8 @@
 
   /* ------------------------------ rendering ------------------------------ */
   function render() {
+    ensureScenarioColors();
+    renderScenarioPills();
     document.querySelectorAll('.tab-btn').forEach(function (b) {
       b.classList.toggle('active', b.dataset.tab === state.activeTab);
     });
@@ -57,6 +66,21 @@
     else main.innerHTML = UI.renderDashboard(state);
 
     if (state.activeTab === 'dashboard') drawChart();
+  }
+
+  // Header pills: one per scenario with its color dot. Click to edit that
+  // scenario (jumps to the Scenarios tab); the active one is highlighted.
+  function renderScenarioPills() {
+    var host = document.getElementById('scenario-pills');
+    if (!host) return;
+    var html = (state.scenarios || []).map(function (s) {
+      var active = (state.activeTab === 'scenarios' && s.id === state.editingId) ? ' active' : '';
+      return '<button class="scenario-pill' + active + '" data-action="pill-edit" data-id="' + s.id + '" title="' + UI.esc(s.name) + '">' +
+        '<span class="pill-dot" style="background:' + (s.color || '#888') + '"></span>' +
+        '<span class="pill-name">' + UI.esc(s.name) + '</span></button>';
+    }).join('');
+    html += '<button class="scenario-pill add" data-action="add-scenario" title="New scenario">+ New</button>';
+    host.innerHTML = html;
   }
 
   function refreshLive() {
@@ -95,7 +119,7 @@
     var yKey = real ? 'balanceReal' : 'balance';
     var datasets = selected.map(function (s, i) {
       var r = global.RetEngine.projectScenario(s, state.settings, { now: state.now });
-      var color = CHART_COLORS[i % CHART_COLORS.length];
+      var color = s.color || CHART_COLORS[i % CHART_COLORS.length];
       return {
         label: s.name,
         data: r.rows.map(function (row) { return { x: row.age, y: row[yKey] }; }),
@@ -141,6 +165,7 @@
     return {
       id: genId(),
       name: 'Scenario ' + (state.scenarios.length + 1),
+      color: SCENARIO_COLORS[state.scenarios.length % SCENARIO_COLORS.length],
       notes: '',
       startingBalance: '',
       retireAge: 65,
@@ -223,19 +248,23 @@
       setByPath(s, t.dataset.path, value);
 
       // When a contribution period's Start/End is committed, reshape the timeline
-      // so periods never overlap, then rebuild the table (Months/Total/clamped
-      // ends). Only on 'change' (commit), never mid-keystroke, to keep focus.
+      // so periods never overlap. Only re-render if the clamp actually changed
+      // something (reorder or a clamped end) — otherwise nothing should move.
       if (e.type === 'change' && /^contributionPeriods\.\d+\.(start|end)(Month|Year)$/.test(t.dataset.path)) {
+        var before = JSON.stringify(s.contributionPeriods);
         s.contributionPeriods = global.RetEngine.clampContributionPeriods(s.contributionPeriods);
         persist();
-        rerenderEditor();
+        if (JSON.stringify(s.contributionPeriods) !== before) rerenderEditor();
+        else refreshLive();
         return;
       }
       // Same no-overlap reshape for return phases when From/To age is committed.
       if (e.type === 'change' && /^returnPhases\.\d+\.(from|to)Age$/.test(t.dataset.path)) {
+        var beforeP = JSON.stringify(s.returnPhases);
         s.returnPhases = global.RetEngine.clampReturnPhases(s.returnPhases);
         persist();
-        rerenderEditor();
+        if (JSON.stringify(s.returnPhases) !== beforeP) rerenderEditor();
+        else refreshLive();
         return;
       }
     }
@@ -243,11 +272,22 @@
     refreshLive();
   }
 
-  // Rebuild just the scenario editor in place (used after structural changes that
-  // aren't add/remove rows, e.g. the contribution auto-clamp).
+  // Rebuild only the Scenarios pane in place — no full re-render, no fade — so
+  // committing a date doesn't blink the whole screen. Restores focus to the
+  // field the user was on if possible.
   function rerenderEditor() {
     if (state.activeTab !== 'scenarios') { render(); return; }
-    render();
+    var active = document.activeElement;
+    var path = active && active.dataset ? active.dataset.path : null;
+    var main = document.getElementById('main');
+    main.innerHTML = UI.renderScenarios(state);
+    var pane = main.querySelector('.tab-pane');
+    if (pane) pane.classList.add('no-anim');
+    renderScenarioPills();
+    if (path) {
+      var again = main.querySelector('[data-path="' + path.replace(/"/g, '\\"') + '"]');
+      if (again) { try { again.focus({ preventScroll: true }); } catch (x) { try { again.focus(); } catch (y) {} } }
+    }
   }
 
   function onClick(e) {
@@ -264,6 +304,7 @@
     switch (action) {
       case 'add-scenario': addScenario(); break;
       case 'edit-scenario': state.editingId = id; persist(); render(); break;
+      case 'pill-edit': state.activeTab = 'scenarios'; state.editingId = id; persist(); render(); break;
       case 'duplicate-scenario': duplicateScenario(id); break;
       case 'delete-scenario': deleteScenario(id); break;
       case 'rename-scenario': renameScenario(id); break;

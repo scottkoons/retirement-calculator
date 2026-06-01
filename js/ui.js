@@ -24,15 +24,24 @@
     return (neg ? '-$' : '$') + Math.abs(Math.round(n)).toLocaleString('en-US');
   }
   function attr(scope, path) { return 'data-scope="' + scope + '" data-path="' + path + '"'; }
-  function num(v) { var n = parseFloat(v); return isFinite(n) ? n : 0; }
+  function num(v) { var n = parseFloat(typeof v === 'string' ? v.replace(/,/g, '') : v); return isFinite(n) ? n : 0; }
 
   function textInput(scope, path, value, placeholder, cls) {
     return '<input type="text" class="' + (cls || '') + '" ' + attr(scope, path) +
       ' value="' + esc(value) + '" placeholder="' + esc(placeholder || '') + '">';
   }
   function moneyInput(scope, path, value, placeholder) {
-    return '<input type="number" inputmode="decimal" step="any" class="money" ' + attr(scope, path) +
-      ' value="' + esc(value) + '" placeholder="' + esc(placeholder || '') + '">';
+    return '<input type="text" inputmode="numeric" class="money" ' + attr(scope, path) +
+      ' value="' + esc(fmtThousands(value)) + '" placeholder="' + esc(placeholder || '') + '">';
+  }
+  // Format a raw value with thousands separators, whole dollars only.
+  function fmtThousands(v) {
+    if (v == null || v === '') return '';
+    var s = String(v);
+    var neg = /^\s*-/.test(s);
+    var digits = s.replace(/[^\d]/g, '').replace(/^0+(?=\d)/, '');
+    if (!digits) return neg ? '-' : '';
+    return (neg ? '-' : '') + Number(digits).toLocaleString('en-US');
   }
   function numInput(scope, path, value, placeholder, cls) {
     return '<input type="number" step="any" class="' + (cls || 'num') + '" ' + attr(scope, path) +
@@ -289,39 +298,49 @@
     if (foot) foot.textContent = fmtMoney(total);
   }
 
+  // A titled section card with an optional "+ Add" button and accent color.
+  function sectionCard(accent, title, addBtn, inner, note) {
+    return '<div class="section-card accent-' + accent + '">' +
+      '<div class="section-head"><h4>' + esc(title) + '</h4>' + (addBtn || '') + '</div>' +
+      inner +
+      (note ? '<p class="muted small section-note">' + note + '</p>' : '') +
+    '</div>';
+  }
+  function addBtn(list, label) {
+    return '<button class="btn small" data-action="add-row" data-list="' + list + '">' + esc(label) + '</button>';
+  }
+
   function renderScenarioEditor(state) {
     var s = state.scenarios.filter(function (x) { return x.id === state.editingId; })[0];
     if (!s) return '';
-    return '<div class="card editor">' +
+    return '<div class="editor-wrap">' +
       '<div class="editor-head"><h3>Editing: ' + esc(s.name) + '</h3>' +
         '<button class="btn small" data-action="close-editor">Done</button></div>' +
-      '<div class="grid3">' +
-        '<div class="field"><label>Retirement age (you)</label>' + numInput('scenario', 'retireAge', s.retireAge, 'age', 'num') + '</div>' +
-        '<div class="field"><label>Your SS claiming age</label>' + claimSelect('scenario', 'claimAgeA', s.claimAgeA) + '</div>' +
-        '<div class="field"><label>Spouse SS claiming age</label>' + claimSelect('scenario', 'claimAgeB', s.claimAgeB) + '</div>' +
-        '<div class="field"><label>Starting balance (blank = use settings)</label>' + moneyInput('scenario', 'startingBalance', s.startingBalance, '$') + '</div>' +
-        '<div class="field"><label>Retirement spending (today\'s $/mo)</label>' + moneyInput('scenario', 'retirementSpending', s.retirementSpending, '$/mo') + '</div>' +
-      '</div>' +
 
-      '<div class="sub"><div class="sub-head"><h4>Monthly contributions</h4>' +
-        '<button class="btn small" data-action="add-row" data-list="contributionPeriods">+ Add period</button></div>' +
-        contribTable(state, s) +
-        '<p class="muted small">Each row is a time period — they can\'t overlap, so setting a new Start automatically ends the period before it the month prior. Leave a gap for months you contribute nothing, or add a $0 row to label a lapse. Blank End = contribute until retirement.</p></div>' +
+      sectionCard('basics', 'Basics', '',
+        '<div class="grid3">' +
+          '<div class="field"><label>Retirement age (you)</label>' + numInput('scenario', 'retireAge', s.retireAge, 'age', 'num') + '</div>' +
+          '<div class="field"><label>Your SS claiming age</label>' + claimSelect('scenario', 'claimAgeA', s.claimAgeA) + '</div>' +
+          '<div class="field"><label>Spouse SS claiming age</label>' + claimSelect('scenario', 'claimAgeB', s.claimAgeB) + '</div>' +
+          '<div class="field"><label>Starting balance (blank = use settings)</label>' + moneyInput('scenario', 'startingBalance', s.startingBalance, '$') + '</div>' +
+          '<div class="field"><label>Retirement spending (today\'s $/mo)</label>' + moneyInput('scenario', 'retirementSpending', s.retirementSpending, '$/mo') + '</div>' +
+        '</div>', '') +
 
-      '<div class="sub"><div class="sub-head"><h4>Lump-sum events</h4>' +
-        '<button class="btn small" data-action="add-row" data-list="lumpSums">+ Add lump sum</button></div>' +
-        lumpTable(state, s) +
-        '<p class="muted small">One-time deposits (inheritance, business sale). Use a negative amount for a one-time withdrawal.</p></div>' +
+      sectionCard('contrib', 'Monthly Contributions', addBtn('contributionPeriods', '+ Add period'),
+        contribTable(state, s),
+        'Each row is a time period — they can\'t overlap, so setting a new Start automatically ends the period before it the month prior. Leave a gap for months you contribute nothing, or add a $0 row to label a lapse. Blank End = contribute until retirement.') +
 
-      '<div class="sub"><div class="sub-head"><h4>Extra income</h4>' +
-        '<button class="btn small" data-action="add-row" data-list="extraIncome">+ Add income</button></div>' +
-        incomeTable(state, s) +
-        '<p class="muted small">Recurring income in retirement — pension, rental, business. Tick "tax" if it\'s taxable. Leave "To" blank for lifetime income.</p></div>' +
+      sectionCard('lump', 'Lump Sum Events', addBtn('lumpSums', '+ Add lump sum'),
+        lumpTable(state, s),
+        'One-time deposits (inheritance, business sale). Use a negative amount for a one-time withdrawal.') +
 
-      '<div class="sub"><div class="sub-head"><h4>Investment return by age</h4>' +
-        '<button class="btn small" data-action="add-row" data-list="returnPhases">+ Add phase</button></div>' +
-        returnPhaseTable(state, s) +
-        '<p class="muted small">Model shifting to safer investments as you age — e.g. 7% from 50–65, 6% from 65–75, 5% after 75. Phases can\'t overlap; the previous phase ends where the next begins. Leave "To age" blank on the last phase to run to the end. With no phases, the single Settings return applies.</p></div>' +
+      sectionCard('income', 'Retirement Income Streams', addBtn('extraIncome', '+ Add income'),
+        incomeTable(state, s),
+        'Recurring income in retirement — pension, rental, business. Tick "tax" if it\'s taxable. Leave "To" blank for lifetime income.') +
+
+      sectionCard('return', 'Investment Return by Age', addBtn('returnPhases', '+ Add phase'),
+        returnPhaseTable(state, s),
+        'Model shifting to safer investments as you age — e.g. 7% from 50–65, 6% from 65–75, 5% after 75. Phases can\'t overlap; the previous phase ends where the next begins. Leave "To age" blank on the last phase to run to the end. With no phases, the single Settings return applies.') +
 
       '<div id="editor-summary" class="summary-box">' + renderMiniSummary(state, s) + '</div>' +
     '</div>';
@@ -439,6 +458,7 @@
     renderMiniSummary: renderMiniSummary,
     refreshComputedCells: refreshComputedCells,
     fmtMoney: fmtMoney,
+    fmtThousands: fmtThousands,
     esc: esc
   };
 })(window);

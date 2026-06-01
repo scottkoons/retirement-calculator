@@ -192,6 +192,29 @@
     var t = e.target;
     if (!t.dataset || !t.dataset.path) return;
     var value = t.type === 'checkbox' ? t.checked : t.value;
+
+    // Money fields: live thousands-separators, whole dollars only. Store the raw
+    // integer in state, but show the formatted string and keep the caret sane.
+    if (t.classList && t.classList.contains('money')) {
+      var raw = t.value;
+      var neg = /^\s*-/.test(raw);
+      var digits = raw.replace(/[^\d]/g, '');
+      var rawNum = digits ? (neg ? '-' : '') + String(Number(digits)) : '';
+      var formatted = UI.fmtThousands(rawNum);
+      // reposition caret: keep the count of digits to the left of the cursor
+      var pos = t.selectionStart || 0;
+      var digitsLeft = (raw.slice(0, pos).match(/\d/g) || []).length;
+      t.value = formatted;
+      if (e.type === 'input') {
+        var newPos = 0, seen = 0;
+        for (; newPos < formatted.length && seen < digitsLeft; newPos++) {
+          if (/\d/.test(formatted[newPos])) seen++;
+        }
+        try { t.setSelectionRange(newPos, newPos); } catch (x) {}
+      }
+      value = rawNum; // store unformatted integer
+    }
+
     if (t.dataset.scope === 'settings') {
       setByPath(state, t.dataset.path, value);
     } else {

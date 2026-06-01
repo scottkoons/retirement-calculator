@@ -33,7 +33,7 @@
   }
 
   function num(v, dflt) {
-    var n = parseFloat(v);
+    var n = parseFloat(typeof v === 'string' ? v.replace(/,/g, '') : v);
     return isFinite(n) ? n : (dflt || 0);
   }
 

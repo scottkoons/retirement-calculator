@@ -10,7 +10,7 @@
   state.now = { month: new Date().getMonth() + 1, year: new Date().getFullYear() };
   var chart = null;
   // Dashboard accent palette — bright lines that read on the dark grid.
-  var CHART_COLORS = ['#2dd4bf', '#fb923c', '#fbbf24', '#fb7185', '#22d3ee', '#a3e635', '#f472b6'];
+  var CHART_COLORS = ['#2dd4bf', '#34d399', '#fbbf24', '#fb7185', '#22d3ee', '#a3e635', '#f472b6'];
   var CHART_INK = '#aab6c8', CHART_GRID = 'rgba(43, 53, 74, 0.6)', CHART_PANEL = '#0d1219';
 
   function genId() { return 'sc_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 7); }

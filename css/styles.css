@@ -30,8 +30,8 @@
   --cyan-2: #22d3ee;
   --cyan-dim: rgba(45, 212, 191, .14);
   --cyan-ring: rgba(45, 212, 191, .30);
-  --green: #fb923c;         /* positive (orange) */
-  --green-dim: rgba(251, 146, 60, .14);
+  --green: #34d399;         /* positive */
+  --green-dim: rgba(52, 211, 153, .14);
   --amber: #fbbf24;         /* warn */
   --rose: #fb7185;          /* negative / danger */
   --rose-dim: rgba(251, 113, 133, .14);
@@ -106,7 +106,7 @@ h1, h2, h3, h4 { font-family: var(--display); letter-spacing: -.01em; }
   content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--faint);
 }
 .save-status.ok { color: var(--green); }
-.save-status.ok::before { background: var(--green); box-shadow: 0 0 8px 1px rgba(251,146,60,.7); }
+.save-status.ok::before { background: var(--green); box-shadow: 0 0 8px 1px rgba(52,211,153,.7); }
 .save-status.err { color: var(--rose); }
 .save-status.err::before { background: var(--rose); box-shadow: 0 0 8px 1px rgba(251,113,133,.7); }
 

@@ -174,14 +174,19 @@
     var r = global.RetEngine.projectScenario(s, state.settings, { now: state.now });
     var sm = r.summary;
     return '<div class="metrics-inline">' +
-      metric('Nest egg at age ' + sm.retireAge, fmtMoney(sm.nestEggAtRetirement)) +
-      metric('Monthly income at retirement', fmtMoney(sm.retirementMonthlyIncome)) +
-      metric('Balance at age 90', fmtMoney(sm.balanceAt90)) +
+      metric('Nest egg at age ' + sm.retireAge, fmtMoney(sm.nestEggAtRetirement), sm.nestEggAtRetirementReal) +
+      metric('Monthly income at retirement', fmtMoney(sm.retirementMonthlyIncome), sm.retirementMonthlyIncomeReal) +
+      metric('Balance at age 90', fmtMoney(sm.balanceAt90), sm.balanceAt90Real) +
       metric('Money runs out', sm.depletionAge ? 'age ' + sm.depletionAge : 'never ✓') +
     '</div>';
   }
-  function metric(label, val) {
-    return '<div class="metric"><div class="m-val">' + esc(val) + '</div><div class="m-label">' + esc(label) + '</div></div>';
+  // metric(label, nominalText, [realNumber]) — when a real value is given, show a
+  // today's-dollars buying-power subline beneath the actual (nominal) figure.
+  function metric(label, val, real) {
+    var sub = (real != null && !isNaN(real))
+      ? '<div class="m-real">≈ ' + esc(fmtMoney(real)) + ' in today\'s $</div>' : '';
+    return '<div class="metric"><div class="m-val">' + esc(val) + '</div>' + sub +
+      '<div class="m-label">' + esc(label) + '</div></div>';
   }
 
   function renderScenarios(state) {
@@ -220,14 +225,36 @@
       : '<p class="muted">Select one or more scenarios above to compare them.</p>';
 
     return '<div class="tab-pane">' +
-      '<p class="intro">Pick scenarios to compare side by side.</p>' +
+      '<div class="bar"><p class="intro" style="margin:0">Pick scenarios to compare side by side.</p>' +
+        dollarBasisToggle(state) + '</div>' +
       '<div class="card"><div class="picker">' + picker + '</div></div>' +
       '<div class="card">' + table + '</div>' +
-      '<div class="card"><h3>Projected balance over time</h3><div class="chart-wrap"><canvas id="balanceChart"></canvas></div></div>' +
+      '<div class="card"><h3>Projected balance over time</h3>' + chartBasisNote(state) +
+        '<div class="chart-wrap"><canvas id="balanceChart"></canvas></div></div>' +
     '</div>';
   }
 
+  // Toggle: actual future dollars vs. today's-dollars buying power.
+  function dollarBasisToggle(state) {
+    var real = state.dollarBasis === 'real';
+    return '<div class="basis-toggle" role="group" aria-label="Dollar basis">' +
+      '<button class="basis-btn' + (!real ? ' active' : '') + '" data-action="set-basis" data-basis="nominal" ' +
+        'title="The actual dollar amounts in each future year">Actual $</button>' +
+      '<button class="basis-btn' + (real ? ' active' : '') + '" data-action="set-basis" data-basis="real" ' +
+        'title="Adjusted for inflation — what the money is worth in today\'s buying power">Today\'s $</button>' +
+    '</div>';
+  }
+  function chartBasisNote(state) {
+    var real = state.dollarBasis === 'real';
+    return '<p class="muted small basis-note">Showing <strong>' +
+      (real ? "today's dollars" : 'actual future dollars') + '</strong>' +
+      (real ? ' — adjusted for inflation to reflect real buying power.' : ' — the raw amounts in each year.') +
+      ' Use the toggle above to switch.</p>';
+  }
+
   function buildCompareTable(state, selected) {
+    var real = state.dollarBasis === 'real';
+    var k = real ? 'Real' : '';
     var projs = selected.map(function (s) {
       return { name: s.name, p: global.RetEngine.projectScenario(s, state.settings, { now: state.now }) };
     });
@@ -236,11 +263,13 @@
       return '<tr><td class="metric-name">' + label + '</td>' +
         projs.map(function (x) { return '<td>' + fn(x.p.summary) + '</td>'; }).join('') + '</tr>';
     }
-    return '<h3>Comparison</h3><div class="table-scroll"><table class="compare"><thead><tr>' + head + '</tr></thead><tbody>' +
+    var basisLabel = real ? "today's $" : 'actual $';
+    return '<h3>Comparison <span class="h3-tag">' + basisLabel + '</span></h3>' +
+      '<div class="table-scroll"><table class="compare"><thead><tr>' + head + '</tr></thead><tbody>' +
       row('Retirement age', function (m) { return m.retireAge; }) +
-      row('Nest egg at retirement', function (m) { return fmtMoney(m.nestEggAtRetirement); }) +
-      row('Monthly income at retirement', function (m) { return fmtMoney(m.retirementMonthlyIncome); }) +
-      row('Balance at age 90', function (m) { return fmtMoney(m.balanceAt90); }) +
+      row('Nest egg at retirement', function (m) { return fmtMoney(m['nestEggAtRetirement' + k]); }) +
+      row('Monthly income at retirement', function (m) { return fmtMoney(m['retirementMonthlyIncome' + k]); }) +
+      row('Balance at age 90', function (m) { return fmtMoney(m['balanceAt90' + k]); }) +
       row('Money runs out', function (m) { return m.depletionAge ? 'age ' + m.depletionAge : 'never ✓'; }) +
     '</tbody></table></div>';
   }

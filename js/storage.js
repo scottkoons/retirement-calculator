@@ -21,7 +21,8 @@
       scenarios: [],
       selectedScenarioIds: [],
       editingId: null,
-      activeTab: 'dashboard'
+      activeTab: 'dashboard',
+      dollarBasis: 'nominal'
     };
   }
 

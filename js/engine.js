@@ -27,6 +27,11 @@
     return amount * Math.pow(1 + (annualPct || 0) / 100, monthsFromNow / 12);
   }
 
+  // Discount a future (nominal) amount back to today's-dollar buying power.
+  function deflate(amount, annualPct, monthsFromNow) {
+    return amount * Math.pow(1 + (annualPct || 0) / 100, -monthsFromNow / 12);
+  }
+
   function num(v, dflt) {
     var n = parseFloat(v);
     return isFinite(n) ? n : (dflt || 0);
@@ -144,37 +149,52 @@
 
       var fa = fromAbs(absM);
       if (fa.month === 1 || absM === nowAbs || absM === endAbs) {
+        // Deflate nominal figures back to today's-dollar buying power.
+        var realFactor = Math.pow(1 + inflationPct / 100, -(absM - nowAbs) / 12);
         rows.push({
           absMonth: absM, year: fa.year, age: Math.round(ageA * 10) / 10,
           balance: Math.round(balance),
+          balanceReal: Math.round(balance * realFactor),
           incomeMonthly: Math.round(incomeGross),
-          spendingMonthly: Math.round(spending)
+          incomeMonthlyReal: Math.round(incomeGross * realFactor),
+          spendingMonthly: Math.round(spending),
+          spendingMonthlyReal: Math.round(spending * realFactor)
         });
       }
     }
 
-    var balAt90 = null;
+    var balAt90 = null, balAt90Real = null;
     var abs90 = birthAbsA + 90 * 12;
     for (var i = 0; i < rows.length; i++) {
-      if (rows[i].absMonth >= abs90) { balAt90 = rows[i].balance; break; }
+      if (rows[i].absMonth >= abs90) { balAt90 = rows[i].balance; balAt90Real = rows[i].balanceReal; break; }
     }
+
+    // Deflation factors at the moments each summary figure is measured.
+    var retireFactor = Math.pow(1 + inflationPct / 100, -Math.max(0, retireAbs - nowAbs) / 12);
+    var endFactor = Math.pow(1 + inflationPct / 100, -(endAbs - nowAbs) / 12);
+    var nestEgg = nestEggAtRetirement != null ? nestEggAtRetirement : balance;
+    var income = retirementIncomeFirst || 0;
 
     return {
       rows: rows,
       summary: {
         retireAge: retireAge,
-        nestEggAtRetirement: Math.round(nestEggAtRetirement != null ? nestEggAtRetirement : balance),
-        retirementMonthlyIncome: Math.round(retirementIncomeFirst || 0),
+        nestEggAtRetirement: Math.round(nestEgg),
+        nestEggAtRetirementReal: Math.round(nestEgg * retireFactor),
+        retirementMonthlyIncome: Math.round(income),
+        retirementMonthlyIncomeReal: Math.round(income * retireFactor),
         balanceAt90: balAt90 != null ? balAt90 : Math.round(balance),
+        balanceAt90Real: balAt90Real != null ? balAt90Real : Math.round(balance * endFactor),
         depletionAge: depletionAge,
-        finalBalance: Math.round(balance)
+        finalBalance: Math.round(balance),
+        finalBalanceReal: Math.round(balance * endFactor)
       }
     };
   }
 
   var api = {
     projectScenario: projectScenario,
-    _helpers: { toAbs: toAbs, fromAbs: fromAbs, monthlyRate: monthlyRate, inflate: inflate, contributionAt: contributionAt, lumpAt: lumpAt }
+    _helpers: { toAbs: toAbs, fromAbs: fromAbs, monthlyRate: monthlyRate, inflate: inflate, deflate: deflate, contributionAt: contributionAt, lumpAt: lumpAt }
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   global.RetEngine = api;

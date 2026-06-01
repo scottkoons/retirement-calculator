@@ -328,12 +328,44 @@ input.grow { flex: 1; min-width: 150px; }
   font-size: 1.4rem; font-weight: 700; line-height: 1.05; letter-spacing: -.01em;
   font-variant-numeric: tabular-nums; color: var(--ink);
 }
+.m-real {
+  font-family: var(--mono); font-size: .76rem; font-weight: 600;
+  color: var(--green); margin-top: .25rem; font-variant-numeric: tabular-nums;
+  letter-spacing: -.01em;
+}
 .m-label {
   font-size: .64rem; color: var(--muted); margin-top: .5rem; font-weight: 600;
   text-transform: uppercase; letter-spacing: .07em; font-family: var(--mono); line-height: 1.4;
 }
 
 /* ============================ Dashboard ============================ */
+/* Dollar-basis toggle (actual future $ vs today's $) */
+.basis-toggle {
+  display: inline-flex; gap: .2rem; margin-left: auto; flex: 0 0 auto;
+  background: var(--bg-2); border: 1px solid var(--line);
+  padding: .25rem; border-radius: var(--radius);
+}
+.basis-btn {
+  border: none; background: transparent; cursor: pointer;
+  padding: .42rem .85rem; border-radius: var(--radius-sm);
+  font-size: .76rem; font-weight: 700; color: var(--muted);
+  font-family: var(--mono); letter-spacing: .02em; white-space: nowrap;
+  transition: color .14s ease, background .14s ease, box-shadow .14s ease;
+}
+.basis-btn:hover { color: var(--ink); background: var(--panel-2); }
+.basis-btn.active {
+  color: #07100e; background: var(--green);
+  box-shadow: 0 0 14px -4px rgba(52,211,153,.7);
+}
+.basis-note { margin: -.4rem 0 1rem; }
+.h3-tag {
+  font-family: var(--mono); font-size: .62rem; font-weight: 600;
+  color: var(--green); border: 1px solid var(--green-dim);
+  background: var(--green-dim); padding: .12rem .4rem; border-radius: 4px;
+  letter-spacing: .04em; margin-left: .5rem; vertical-align: middle;
+  text-transform: lowercase;
+}
+@media (max-width: 560px) { .basis-toggle { margin-left: 0; } }
 .picker { display: flex; flex-wrap: wrap; gap: .55rem; }
 .chk {
   display: inline-flex; align-items: center; gap: .5rem;

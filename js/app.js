@@ -84,12 +84,14 @@
     if (!selected.length) return;
 
     // Align on a shared set of years using each scenario's age axis.
+    var real = state.dollarBasis === 'real';
+    var yKey = real ? 'balanceReal' : 'balance';
     var datasets = selected.map(function (s, i) {
       var r = global.RetEngine.projectScenario(s, state.settings, { now: state.now });
       var color = CHART_COLORS[i % CHART_COLORS.length];
       return {
         label: s.name,
-        data: r.rows.map(function (row) { return { x: row.age, y: row.balance }; }),
+        data: r.rows.map(function (row) { return { x: row.age, y: row[yKey] }; }),
         borderColor: color, backgroundColor: color, pointBackgroundColor: color,
         tension: 0.25, pointRadius: 0, pointHoverRadius: 4, borderWidth: 2
       };
@@ -107,7 +109,7 @@
           x: { type: 'linear', title: { display: true, text: 'YOUR AGE', color: CHART_INK },
                ticks: { stepSize: 5, color: CHART_INK }, grid: { color: CHART_GRID, drawTicks: false },
                border: { color: CHART_GRID } },
-          y: { title: { display: true, text: 'PORTFOLIO BALANCE', color: CHART_INK },
+          y: { title: { display: true, text: real ? "PORTFOLIO BALANCE (TODAY'S $)" : 'PORTFOLIO BALANCE', color: CHART_INK },
                ticks: { color: CHART_INK, callback: function (v) { return '$' + (v / 1000).toLocaleString() + 'k'; } },
                grid: { color: CHART_GRID, drawTicks: false }, border: { color: CHART_GRID } }
         },
@@ -219,6 +221,7 @@
         if (sc) { sc[btn.dataset.list].splice(+btn.dataset.index, 1); persist(); render(); }
         break;
       }
+      case 'set-basis': state.dollarBasis = btn.dataset.basis; persist(); render(); break;
       case 'backup-download': S.exportFile(stripState()); break;
       case 'backup-restore': document.getElementById('restore-input').click(); break;
     }

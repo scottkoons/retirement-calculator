@@ -62,9 +62,12 @@
       // simplest: re-render dashboard (no text inputs that hold focus there)
       render();
     } else if (state.activeTab === 'scenarios') {
-      var box = document.getElementById('editor-summary');
       var s = editingScenario();
-      if (box && s) box.innerHTML = UI.renderMiniSummary(state, s);
+      if (!s) return;
+      var box = document.getElementById('editor-summary');
+      if (box) box.innerHTML = UI.renderMiniSummary(state, s);
+      // Refresh computed cells (Total, lump-sum total) without rebuilding inputs.
+      UI.refreshComputedCells(state, s);
     }
   }
 
@@ -134,9 +137,8 @@
       startingBalance: '',
       retireAge: 65,
       claimAgeA: 67, claimAgeB: 67,
-      monthlyContribution: '',
       retirementSpending: '',
-      contributionChanges: [],
+      contributionPeriods: [],
       lumpSums: [],
       extraIncome: []
     };
@@ -188,9 +190,26 @@
       var s = editingScenario();
       if (!s) return;
       setByPath(s, t.dataset.path, value);
+
+      // When a contribution period's Start/End is committed, reshape the timeline
+      // so periods never overlap, then rebuild the table (Months/Total/clamped
+      // ends). Only on 'change' (commit), never mid-keystroke, to keep focus.
+      if (e.type === 'change' && /^contributionPeriods\.\d+\.(start|end)(Month|Year)$/.test(t.dataset.path)) {
+        s.contributionPeriods = global.RetEngine.clampContributionPeriods(s.contributionPeriods);
+        persist();
+        rerenderEditor();
+        return;
+      }
     }
     persist();
     refreshLive();
+  }
+
+  // Rebuild just the scenario editor in place (used after structural changes that
+  // aren't add/remove rows, e.g. the contribution auto-clamp).
+  function rerenderEditor() {
+    if (state.activeTab !== 'scenarios') { render(); return; }
+    render();
   }
 
   function onClick(e) {
@@ -230,9 +249,27 @@
   function defaultRow(list) {
     var now = state.now;
     if (list === 'lumpSums') return { month: now.month, year: now.year + 1, amount: '', label: '' };
-    if (list === 'contributionChanges') return { month: now.month, year: now.year + 1, newMonthly: '' };
+    if (list === 'contributionPeriods') return contribDefault();
     if (list === 'extraIncome') return { label: '', monthly: '', startMonth: now.month, startYear: now.year, endMonth: 12, endYear: '', taxable: false, colaPct: 0 };
     return {};
+  }
+
+  // A new contribution period starts the month after the latest existing period
+  // (or now), with a blank end so it runs to retirement until another follows it.
+  function contribDefault() {
+    var now = state.now;
+    var s = editingScenario();
+    var startM = now.month, startY = now.year;
+    if (s && (s.contributionPeriods || []).length) {
+      var maxStart = -Infinity;
+      s.contributionPeriods.forEach(function (p) {
+        if (p.startYear == null || p.startYear === '') return;
+        var a = (+p.startYear) * 12 + ((+p.startMonth || 1) - 1);
+        if (a > maxStart) maxStart = a;
+      });
+      if (isFinite(maxStart)) { var n = maxStart + 12; startM = (n % 12) + 1; startY = Math.floor(n / 12); }
+    }
+    return { name: '', startMonth: startM, startYear: startY, endMonth: '', endYear: '', monthly: '' };
   }
 
   function onToggleSelect(e) {

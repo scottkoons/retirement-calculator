@@ -307,6 +307,56 @@ input.grow { flex: 1; min-width: 150px; }
 .rows .row:hover { background: var(--bg-2); }
 .rows .row.wrap { row-gap: .45rem; }
 
+/* ---- Data tables: Monthly Contributions & Lump-Sum Events ---- */
+.ttable { display: grid; gap: 2px; margin-bottom: .6rem; }
+.trow {
+  display: grid; align-items: center; gap: .6rem;
+  padding: .4rem .55rem; border-radius: var(--radius-sm);
+  transition: background .12s ease;
+}
+.contrib-table .trow {
+  grid-template-columns: minmax(140px, 1.4fr) 182px 182px 122px 60px 74px 30px;
+}
+.lump-table .trow {
+  grid-template-columns: minmax(150px, 2fr) 182px 52px 150px 30px;
+}
+.trow.contrib-row:hover, .trow.lump-row:hover { background: var(--bg-2); }
+.trow.thead {
+  font-family: var(--mono); font-size: .62rem; font-weight: 600;
+  text-transform: uppercase; letter-spacing: .08em; color: var(--muted);
+  border-bottom: 1px solid var(--line); border-radius: 0; padding-bottom: .5rem;
+}
+.trow.tfoot {
+  border-top: 1px solid var(--line); border-radius: 0; margin-top: 2px;
+  font-weight: 700; color: var(--ink);
+}
+.td { min-width: 0; display: flex; align-items: center; }
+.td input { width: 100%; }
+.td-num { justify-content: flex-end; text-align: right; color: var(--ink-soft); }
+.td-amt input, .td-name input { width: 100%; }
+.thead .td-num, .thead .td-amt { justify-content: flex-end; }
+.td.mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.td.age { color: var(--muted); font-size: .82rem; }
+.td-x { justify-content: center; }
+/* compact month+year pair inside a cell */
+.my { display: flex; gap: .35rem; width: 100%; }
+.my select.mo { width: auto; flex: 1; min-width: 0; padding-right: 1.5rem; font-size: .8rem; }
+.my input.yr { width: 62px; flex: 0 0 62px; text-align: center; padding-left: .3rem; padding-right: .3rem; }
+.end-hint {
+  display: none; /* tooltip-ish hint kept minimal */
+}
+@media (max-width: 860px) {
+  .contrib-table .trow, .lump-table .trow {
+    grid-template-columns: 1fr 1fr; gap: .4rem .6rem;
+  }
+  .trow.thead { display: none; }
+  .contrib-row, .lump-row { border: 1px solid var(--line); padding: .6rem; }
+  .td::before {
+    content: attr(data-h); font-family: var(--mono); font-size: .6rem;
+    text-transform: uppercase; color: var(--muted); margin-right: .4rem;
+  }
+}
+
 /* ============================ Metrics / summary ============================ */
 .summary-box { margin-top: 1.3rem; border-top: 1px solid var(--line); padding-top: 1.3rem; }
 .metrics-inline { display: grid; grid-template-columns: repeat(4, 1fr); gap: .8rem; }

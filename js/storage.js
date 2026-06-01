@@ -36,10 +36,42 @@
       var merged = Object.assign(base, data);
       merged.settings = Object.assign(base.settings, data.settings || {});
       merged.settings.assumptions = Object.assign(defaultState().settings.assumptions, (data.settings || {}).assumptions || {});
+      (merged.scenarios || []).forEach(function (s) {
+        migrateScenario(s);
+        if (global.RetEngine && global.RetEngine.clampContributionPeriods) {
+          s.contributionPeriods = global.RetEngine.clampContributionPeriods(s.contributionPeriods || []);
+        }
+      });
       return merged;
     } catch (e) {
       console.error('Failed to load state', e);
       return defaultState();
+    }
+  }
+
+  // Convert the legacy contribution model (base amount + dated change rows) into
+  // the contribution-period timeline. Runs once; afterward contributionPeriods
+  // exists and the old fields are dropped.
+  function migrateScenario(s) {
+    if (!s || s.contributionPeriods) return;
+    var periods = [];
+    var base = s.monthlyContribution;
+    var hasBase = base != null && base !== '';
+    var changes = (s.contributionChanges || []).slice().filter(function (c) { return c.year != null && c.year !== ''; });
+    changes.sort(function (a, b) { return (a.year * 12 + a.month) - (b.year * 12 + b.month); });
+    if (hasBase || changes.length) {
+      // First period: the base amount, starting "from the beginning" (blank start).
+      if (hasBase) periods.push({ name: '', startMonth: '', startYear: '', endMonth: '', endYear: '', monthly: base });
+      changes.forEach(function (c, i) {
+        periods.push({ name: '', startMonth: c.month, startYear: c.year, endMonth: '', endYear: '', monthly: c.newMonthly });
+      });
+    }
+    s.contributionPeriods = periods;
+    delete s.monthlyContribution;
+    delete s.contributionChanges;
+    // Normalize any overlaps in stored data right away.
+    if (global.RetEngine && global.RetEngine.clampContributionPeriods) {
+      s.contributionPeriods = global.RetEngine.clampContributionPeriods(s.contributionPeriods);
     }
   }
 

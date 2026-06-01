@@ -248,19 +248,23 @@
       setByPath(s, t.dataset.path, value);
 
       // When a contribution period's Start/End is committed, reshape the timeline
-      // so periods never overlap, then rebuild the table (Months/Total/clamped
-      // ends). Only on 'change' (commit), never mid-keystroke, to keep focus.
+      // so periods never overlap. Only re-render if the clamp actually changed
+      // something (reorder or a clamped end) — otherwise nothing should move.
       if (e.type === 'change' && /^contributionPeriods\.\d+\.(start|end)(Month|Year)$/.test(t.dataset.path)) {
+        var before = JSON.stringify(s.contributionPeriods);
         s.contributionPeriods = global.RetEngine.clampContributionPeriods(s.contributionPeriods);
         persist();
-        rerenderEditor();
+        if (JSON.stringify(s.contributionPeriods) !== before) rerenderEditor();
+        else refreshLive();
         return;
       }
       // Same no-overlap reshape for return phases when From/To age is committed.
       if (e.type === 'change' && /^returnPhases\.\d+\.(from|to)Age$/.test(t.dataset.path)) {
+        var beforeP = JSON.stringify(s.returnPhases);
         s.returnPhases = global.RetEngine.clampReturnPhases(s.returnPhases);
         persist();
-        rerenderEditor();
+        if (JSON.stringify(s.returnPhases) !== beforeP) rerenderEditor();
+        else refreshLive();
         return;
       }
     }
@@ -282,7 +286,7 @@
     renderScenarioPills();
     if (path) {
       var again = main.querySelector('[data-path="' + path.replace(/"/g, '\\"') + '"]');
-      if (again) { try { again.focus(); } catch (x) {} }
+      if (again) { try { again.focus({ preventScroll: true }); } catch (x) { try { again.focus(); } catch (y) {} } }
     }
   }
 

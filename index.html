@@ -10,6 +10,17 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/styles.css">
+  <script>
+    // Apply saved theme before first paint to avoid a flash.
+    (function () {
+      try {
+        var raw = localStorage.getItem('retirementApp.v1');
+        var t = raw ? (JSON.parse(raw).theme) : null;
+        if (!t) t = (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) ? 'light' : 'dark';
+        document.documentElement.setAttribute('data-theme', t);
+      } catch (e) { document.documentElement.setAttribute('data-theme', 'dark'); }
+    })();
+  </script>
 </head>
 <body>
   <header class="app-header">
@@ -33,6 +44,9 @@
     </nav>
 
     <div class="backup">
+      <button class="btn small ghost icon-only" id="theme-toggle" data-action="toggle-theme" title="Switch light / dark theme" aria-label="Switch light or dark theme">
+        <span class="btn-ico theme-ico" aria-hidden="true"></span>
+      </button>
       <button class="btn small ghost" data-action="backup-download" title="Save a copy to a file">
         <span class="btn-ico" aria-hidden="true">↓</span> Backup
       </button>

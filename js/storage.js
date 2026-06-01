@@ -22,7 +22,8 @@
       selectedScenarioIds: [],
       editingId: null,
       activeTab: 'dashboard',
-      dollarBasis: 'nominal'
+      dollarBasis: 'nominal',
+      theme: ''
     };
   }
 

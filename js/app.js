@@ -68,7 +68,15 @@
 
   function drawChart() {
     var canvas = document.getElementById('balanceChart');
-    if (!canvas || typeof Chart === 'undefined') return;
+    if (!canvas) return;
+    if (typeof Chart === 'undefined') {
+      // Chart.js loads from a CDN; if it's unavailable (e.g. offline), say so
+      // rather than leaving a blank box that looks broken.
+      var wrap = canvas.parentNode;
+      if (wrap) wrap.innerHTML = '<div class="chart-fallback">The chart needs an internet connection to load. ' +
+        'Your numbers and comparisons above still work offline.</div>';
+      return;
+    }
     var selected = state.scenarios.filter(function (s) { return state.selectedScenarioIds.indexOf(s.id) >= 0; });
     if (chart) { chart.destroy(); chart = null; }
     if (!selected.length) return;

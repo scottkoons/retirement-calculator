@@ -9,7 +9,9 @@
   var state = S.load();
   state.now = { month: new Date().getMonth() + 1, year: new Date().getFullYear() };
   var chart = null;
-  var CHART_COLORS = ['#2563eb', '#16a34a', '#dc2626', '#9333ea', '#ea580c', '#0891b2', '#ca8a04'];
+  // Dashboard accent palette — bright lines that read on the dark grid.
+  var CHART_COLORS = ['#2dd4bf', '#34d399', '#fbbf24', '#fb7185', '#22d3ee', '#a3e635', '#f472b6'];
+  var CHART_INK = '#aab6c8', CHART_GRID = 'rgba(43, 53, 74, 0.6)', CHART_PANEL = '#0d1219';
 
   function genId() { return 'sc_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 7); }
 
@@ -60,28 +62,41 @@
       // simplest: re-render dashboard (no text inputs that hold focus there)
       render();
     } else if (state.activeTab === 'scenarios') {
-      var box = document.getElementById('editor-summary');
       var s = editingScenario();
-      if (box && s) box.innerHTML = UI.renderMiniSummary(state, s);
+      if (!s) return;
+      var box = document.getElementById('editor-summary');
+      if (box) box.innerHTML = UI.renderMiniSummary(state, s);
+      // Refresh computed cells (Total, lump-sum total) without rebuilding inputs.
+      UI.refreshComputedCells(state, s);
     }
   }
 
   function drawChart() {
     var canvas = document.getElementById('balanceChart');
-    if (!canvas || typeof Chart === 'undefined') return;
+    if (!canvas) return;
+    if (typeof Chart === 'undefined') {
+      // Chart.js loads from a CDN; if it's unavailable (e.g. offline), say so
+      // rather than leaving a blank box that looks broken.
+      var wrap = canvas.parentNode;
+      if (wrap) wrap.innerHTML = '<div class="chart-fallback">The chart needs an internet connection to load. ' +
+        'Your numbers and comparisons above still work offline.</div>';
+      return;
+    }
     var selected = state.scenarios.filter(function (s) { return state.selectedScenarioIds.indexOf(s.id) >= 0; });
     if (chart) { chart.destroy(); chart = null; }
     if (!selected.length) return;
 
     // Align on a shared set of years using each scenario's age axis.
+    var real = state.dollarBasis === 'real';
+    var yKey = real ? 'balanceReal' : 'balance';
     var datasets = selected.map(function (s, i) {
       var r = global.RetEngine.projectScenario(s, state.settings, { now: state.now });
       var color = CHART_COLORS[i % CHART_COLORS.length];
       return {
         label: s.name,
-        data: r.rows.map(function (row) { return { x: row.age, y: row.balance }; }),
-        borderColor: color, backgroundColor: color,
-        tension: 0.2, pointRadius: 0, borderWidth: 2
+        data: r.rows.map(function (row) { return { x: row.age, y: row[yKey] }; }),
+        borderColor: color, backgroundColor: color, pointBackgroundColor: color,
+        tension: 0.25, pointRadius: 0, pointHoverRadius: 4, borderWidth: 2
       };
     });
 
@@ -90,15 +105,24 @@
       data: { datasets: datasets },
       options: {
         responsive: true, maintainAspectRatio: false,
+        color: CHART_INK,
+        font: { family: "'JetBrains Mono', monospace" },
         interaction: { mode: 'nearest', intersect: false },
         scales: {
-          x: { type: 'linear', title: { display: true, text: 'Your age' }, ticks: { stepSize: 5 } },
-          y: { title: { display: true, text: 'Portfolio balance' },
-               ticks: { callback: function (v) { return '$' + (v / 1000).toLocaleString() + 'k'; } } }
+          x: { type: 'linear', title: { display: true, text: 'YOUR AGE', color: CHART_INK },
+               ticks: { stepSize: 5, color: CHART_INK }, grid: { color: CHART_GRID, drawTicks: false },
+               border: { color: CHART_GRID } },
+          y: { title: { display: true, text: real ? "PORTFOLIO BALANCE (TODAY'S $)" : 'PORTFOLIO BALANCE', color: CHART_INK },
+               ticks: { color: CHART_INK, callback: function (v) { return '$' + (v / 1000).toLocaleString() + 'k'; } },
+               grid: { color: CHART_GRID, drawTicks: false }, border: { color: CHART_GRID } }
         },
         plugins: {
-          legend: { position: 'bottom' },
-          tooltip: { callbacks: { label: function (c) { return c.dataset.label + ': ' + UI.fmtMoney(c.parsed.y) + ' (age ' + Math.round(c.parsed.x) + ')'; } } }
+          legend: { position: 'bottom', labels: { color: CHART_INK, usePointStyle: true, pointStyle: 'line', boxWidth: 24, padding: 16 } },
+          tooltip: {
+            backgroundColor: CHART_PANEL, borderColor: 'rgba(45,212,191,0.4)', borderWidth: 1,
+            titleColor: '#e6edf6', bodyColor: '#aab6c8', padding: 10, cornerRadius: 6,
+            callbacks: { label: function (c) { return c.dataset.label + ': ' + UI.fmtMoney(c.parsed.y) + ' (age ' + Math.round(c.parsed.x) + ')'; } }
+          }
         }
       }
     });
@@ -113,9 +137,8 @@
       startingBalance: '',
       retireAge: 65,
       claimAgeA: 67, claimAgeB: 67,
-      monthlyContribution: '',
       retirementSpending: '',
-      contributionChanges: [],
+      contributionPeriods: [],
       lumpSums: [],
       extraIncome: []
     };
@@ -167,9 +190,26 @@
       var s = editingScenario();
       if (!s) return;
       setByPath(s, t.dataset.path, value);
+
+      // When a contribution period's Start/End is committed, reshape the timeline
+      // so periods never overlap, then rebuild the table (Months/Total/clamped
+      // ends). Only on 'change' (commit), never mid-keystroke, to keep focus.
+      if (e.type === 'change' && /^contributionPeriods\.\d+\.(start|end)(Month|Year)$/.test(t.dataset.path)) {
+        s.contributionPeriods = global.RetEngine.clampContributionPeriods(s.contributionPeriods);
+        persist();
+        rerenderEditor();
+        return;
+      }
     }
     persist();
     refreshLive();
+  }
+
+  // Rebuild just the scenario editor in place (used after structural changes that
+  // aren't add/remove rows, e.g. the contribution auto-clamp).
+  function rerenderEditor() {
+    if (state.activeTab !== 'scenarios') { render(); return; }
+    render();
   }
 
   function onClick(e) {
@@ -200,6 +240,7 @@
         if (sc) { sc[btn.dataset.list].splice(+btn.dataset.index, 1); persist(); render(); }
         break;
       }
+      case 'set-basis': state.dollarBasis = btn.dataset.basis; persist(); render(); break;
       case 'backup-download': S.exportFile(stripState()); break;
       case 'backup-restore': document.getElementById('restore-input').click(); break;
     }
@@ -208,9 +249,27 @@
   function defaultRow(list) {
     var now = state.now;
     if (list === 'lumpSums') return { month: now.month, year: now.year + 1, amount: '', label: '' };
-    if (list === 'contributionChanges') return { month: now.month, year: now.year + 1, newMonthly: '' };
+    if (list === 'contributionPeriods') return contribDefault();
     if (list === 'extraIncome') return { label: '', monthly: '', startMonth: now.month, startYear: now.year, endMonth: 12, endYear: '', taxable: false, colaPct: 0 };
     return {};
+  }
+
+  // A new contribution period starts the month after the latest existing period
+  // (or now), with a blank end so it runs to retirement until another follows it.
+  function contribDefault() {
+    var now = state.now;
+    var s = editingScenario();
+    var startM = now.month, startY = now.year;
+    if (s && (s.contributionPeriods || []).length) {
+      var maxStart = -Infinity;
+      s.contributionPeriods.forEach(function (p) {
+        if (p.startYear == null || p.startYear === '') return;
+        var a = (+p.startYear) * 12 + ((+p.startMonth || 1) - 1);
+        if (a > maxStart) maxStart = a;
+      });
+      if (isFinite(maxStart)) { var n = maxStart + 12; startM = (n % 12) + 1; startY = Math.floor(n / 12); }
+    }
+    return { name: '', startMonth: startM, startYear: startY, endMonth: '', endYear: '', monthly: '' };
   }
 
   function onToggleSelect(e) {

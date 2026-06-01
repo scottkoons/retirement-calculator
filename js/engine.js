@@ -27,6 +27,11 @@
     return amount * Math.pow(1 + (annualPct || 0) / 100, monthsFromNow / 12);
   }
 
+  // Discount a future (nominal) amount back to today's-dollar buying power.
+  function deflate(amount, annualPct, monthsFromNow) {
+    return amount * Math.pow(1 + (annualPct || 0) / 100, -monthsFromNow / 12);
+  }
+
   function num(v, dflt) {
     var n = parseFloat(v);
     return isFinite(n) ? n : (dflt || 0);
@@ -34,7 +39,24 @@
 
   function has(v) { return v != null && v !== ''; }
 
-  // Active monthly contribution for a month given a base and scheduled changes.
+  // ---- Contribution periods (a non-overlapping timeline) -------------------
+  // A period has start (month/year), optional end (month/year; blank = runs to
+  // retirement), a monthly amount, and a name. A blank start means "from the
+  // beginning of the projection".
+  function periodStartAbs(p) { return has(p.startYear) ? toAbs(num(p.startMonth, 1), num(p.startYear)) : -Infinity; }
+  function periodEndAbs(p) { return has(p.endYear) ? toAbs(num(p.endMonth, 12), num(p.endYear)) : Infinity; }
+
+  // Monthly contribution active in a given month. Periods don't overlap (the UI
+  // enforces it), so at most one is active; a month in a gap returns 0.
+  function contributionPeriodAt(absMonth, periods) {
+    var total = 0;
+    (periods || []).forEach(function (p) {
+      if (absMonth >= periodStartAbs(p) && absMonth <= periodEndAbs(p)) total += num(p.monthly);
+    });
+    return total;
+  }
+
+  // Legacy model: a base amount plus dated "change" rows.
   function contributionAt(absMonth, base, changes) {
     var amount = base;
     var effective = -Infinity;
@@ -44,6 +66,44 @@
       if (a <= absMonth && a > effective) { effective = a; amount = num(c.newMonthly); }
     });
     return amount;
+  }
+
+  // Unified accessor: prefer the period timeline, fall back to the legacy model.
+  function contributionFor(absMonth, scenario) {
+    if (scenario.contributionPeriods && scenario.contributionPeriods.length) {
+      return contributionPeriodAt(absMonth, scenario.contributionPeriods);
+    }
+    return contributionAt(absMonth, num(scenario.monthlyContribution), scenario.contributionChanges);
+  }
+
+  // Reshape a period list so none overlap: sort by start, and if a period's end
+  // reaches into the next period's start, clamp it to the month before. Ends that
+  // are already earlier (intentional gaps) are left untouched. Mutates + returns.
+  function clampContributionPeriods(periods) {
+    var list = (periods || []).slice();
+    list.sort(function (a, b) {
+      var sa = periodStartAbs(a), sb = periodStartAbs(b);
+      return sa === sb ? 0 : (sa < sb ? -1 : 1);
+    });
+    for (var i = 0; i < list.length - 1; i++) {
+      var nextStart = periodStartAbs(list[i + 1]);
+      if (!isFinite(nextStart)) continue;
+      if (periodEndAbs(list[i]) >= nextStart) {
+        var c = fromAbs(nextStart - 1);
+        list[i].endMonth = c.month; list[i].endYear = c.year;
+      }
+    }
+    return list;
+  }
+
+  // Months contributed and (simple, no-growth) total for a period, clamped to the
+  // window [now, retirement). For display in the editor table.
+  function contributionStats(p, nowAbs, retireAbs) {
+    var s = Math.max(periodStartAbs(p), nowAbs);
+    var e = Math.min(periodEndAbs(p), retireAbs - 1);
+    var months = Math.max(0, Math.round(e - s) + 1);
+    if (!isFinite(months)) months = 0;
+    return { months: months, total: months * num(p.monthly) };
   }
 
   // Sum of lump sums dated exactly this absolute month (+ deposit / - withdrawal).
@@ -111,11 +171,12 @@
       var incomeGross = 0, incomeTaxable = 0, spending = 0;
 
       if (!retired) {
-        balance += contributionAt(absM, num(scenario.monthlyContribution), scenario.contributionChanges);
+        balance += contributionFor(absM, scenario);
       } else {
         var ssA = ssIncome(personA, num(scenario.claimAgeA, retireAge), absM, nowAbs, ssColaPct);
         var ssB = ssIncome(personB, num(scenario.claimAgeB, retireAge), absM, nowAbs, ssColaPct);
-        var vaInc = has(va.monthly) ? inflate(num(va.monthly), num(va.colaPct, ssColaPct), absM - nowAbs) : 0;
+        // VA disability rises by the same legally-mandated COLA as Social Security.
+        var vaInc = has(va.monthly) ? inflate(num(va.monthly), ssColaPct, absM - nowAbs) : 0;
         incomeGross += ssA + ssB + vaInc;
         incomeTaxable += ssA + ssB; // SS counted taxable (simplified); VA is tax-free
 
@@ -144,37 +205,55 @@
 
       var fa = fromAbs(absM);
       if (fa.month === 1 || absM === nowAbs || absM === endAbs) {
+        // Deflate nominal figures back to today's-dollar buying power.
+        var realFactor = Math.pow(1 + inflationPct / 100, -(absM - nowAbs) / 12);
         rows.push({
           absMonth: absM, year: fa.year, age: Math.round(ageA * 10) / 10,
           balance: Math.round(balance),
+          balanceReal: Math.round(balance * realFactor),
           incomeMonthly: Math.round(incomeGross),
-          spendingMonthly: Math.round(spending)
+          incomeMonthlyReal: Math.round(incomeGross * realFactor),
+          spendingMonthly: Math.round(spending),
+          spendingMonthlyReal: Math.round(spending * realFactor)
         });
       }
     }
 
-    var balAt90 = null;
+    var balAt90 = null, balAt90Real = null;
     var abs90 = birthAbsA + 90 * 12;
     for (var i = 0; i < rows.length; i++) {
-      if (rows[i].absMonth >= abs90) { balAt90 = rows[i].balance; break; }
+      if (rows[i].absMonth >= abs90) { balAt90 = rows[i].balance; balAt90Real = rows[i].balanceReal; break; }
     }
+
+    // Deflation factors at the moments each summary figure is measured.
+    var retireFactor = Math.pow(1 + inflationPct / 100, -Math.max(0, retireAbs - nowAbs) / 12);
+    var endFactor = Math.pow(1 + inflationPct / 100, -(endAbs - nowAbs) / 12);
+    var nestEgg = nestEggAtRetirement != null ? nestEggAtRetirement : balance;
+    var income = retirementIncomeFirst || 0;
 
     return {
       rows: rows,
       summary: {
         retireAge: retireAge,
-        nestEggAtRetirement: Math.round(nestEggAtRetirement != null ? nestEggAtRetirement : balance),
-        retirementMonthlyIncome: Math.round(retirementIncomeFirst || 0),
+        nestEggAtRetirement: Math.round(nestEgg),
+        nestEggAtRetirementReal: Math.round(nestEgg * retireFactor),
+        retirementMonthlyIncome: Math.round(income),
+        retirementMonthlyIncomeReal: Math.round(income * retireFactor),
         balanceAt90: balAt90 != null ? balAt90 : Math.round(balance),
+        balanceAt90Real: balAt90Real != null ? balAt90Real : Math.round(balance * endFactor),
         depletionAge: depletionAge,
-        finalBalance: Math.round(balance)
+        finalBalance: Math.round(balance),
+        finalBalanceReal: Math.round(balance * endFactor)
       }
     };
   }
 
   var api = {
     projectScenario: projectScenario,
-    _helpers: { toAbs: toAbs, fromAbs: fromAbs, monthlyRate: monthlyRate, inflate: inflate, contributionAt: contributionAt, lumpAt: lumpAt }
+    clampContributionPeriods: clampContributionPeriods,
+    contributionStats: contributionStats,
+    periodStartAbs: periodStartAbs, periodEndAbs: periodEndAbs,
+    _helpers: { toAbs: toAbs, fromAbs: fromAbs, monthlyRate: monthlyRate, inflate: inflate, deflate: deflate, contributionAt: contributionAt, contributionFor: contributionFor, lumpAt: lumpAt }
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   global.RetEngine = api;

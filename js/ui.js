@@ -24,6 +24,7 @@
     return (neg ? '-$' : '$') + Math.abs(Math.round(n)).toLocaleString('en-US');
   }
   function attr(scope, path) { return 'data-scope="' + scope + '" data-path="' + path + '"'; }
+  function num(v) { var n = parseFloat(v); return isFinite(n) ? n : 0; }
 
   function textInput(scope, path, value, placeholder, cls) {
     return '<input type="text" class="' + (cls || '') + '" ' + attr(scope, path) +
@@ -79,9 +80,9 @@
       '<p class="intro">Your profile and assumptions. These feed every scenario. Everything saves automatically.</p>' +
       '<div class="grid2">' + personFields('personA', s.personA || {}) + personFields('personB', s.personB || {}) + '</div>' +
       '<div class="card"><h3>Other income &amp; savings</h3>' +
-        '<div class="field inline"><label>VA disability (tax-free, monthly)</label>' +
+        '<div class="field inline"><label>VA disability (today\'s $, tax-free, monthly)</label>' +
           moneyInput('settings', 'settings.vaDisability.monthly', va.monthly, '$/mo') +
-          '<span class="lbl">COLA %</span>' + numInput('settings', 'settings.vaDisability.colaPct', va.colaPct, '%', 'pct') + '</div>' +
+          '<span class="lbl">rises with SS COLA</span></div>' +
         '<div class="field inline"><label>Current total savings / investments</label>' +
           moneyInput('settings', 'settings.currentSavings', s.currentSavings, '$') + '</div>' +
       '</div>' +
@@ -95,31 +96,102 @@
   }
 
   /* ----------------------------- Scenarios tab ---------------------------- */
-  function lumpRows(s) {
-    if (!(s.lumpSums || []).length) return '<p class="muted small">None yet.</p>';
-    return s.lumpSums.map(function (l, i) {
-      return '<div class="row">' +
-        monthSelect('scenario', 'lumpSums.' + i + '.month', l.month) +
-        yearInput('scenario', 'lumpSums.' + i + '.year', l.year) +
-        moneyInput('scenario', 'lumpSums.' + i + '.amount', l.amount, 'Amount (+/-)') +
-        textInput('scenario', 'lumpSums.' + i + '.label', l.label, 'Label (optional)', 'grow') +
+  // Compact MM/YYYY pair (month dropdown + year). The day is always the 1st.
+  function monthYear(pathBase, month, year, yearPlaceholder) {
+    return '<span class="my">' + monthSelect('scenario', pathBase + 'Month', month) +
+      yearInput('scenario', pathBase + 'Year', year, yearPlaceholder || 'YYYY') + '</span>';
+  }
+  function ageAt(state, absMonth) {
+    var pa = state.settings.personA || {};
+    if (!pa.birthYear) return '—';
+    var birth = absMonth == null ? null : (pa.birthYear * 12 + ((pa.birthMonth || 1) - 1));
+    if (birth == null || !isFinite(absMonth)) return '—';
+    return (Math.round(((absMonth - birth) / 12) * 10) / 10).toFixed(1);
+  }
+  function shortMoney(n) {
+    if (n == null || isNaN(n) || n === 0) return '$0';
+    var a = Math.abs(n), sign = n < 0 ? '-' : '';
+    if (a >= 1000) return sign + '$' + Math.round(a / 1000) + 'K';
+    return sign + '$' + Math.round(a);
+  }
+
+  // Monthly Contributions — a non-overlapping timeline. Columns mirror the
+  // reference: Name · Start · End · Monthly $ · Months · Total.
+  function contribTable(state, s) {
+    var E = global.RetEngine;
+    var now = state.now, nowAbs = E._helpers.toAbs(now.month, now.year);
+    var pa = state.settings.personA || {};
+    var retireAbs = (pa.birthYear ? pa.birthYear * 12 + ((pa.birthMonth || 1) - 1) : nowAbs) +
+      (num(s.retireAge) || 65) * 12;
+    var periods = s.contributionPeriods || [];
+    if (!periods.length) return '<p class="muted small">No contribution periods yet. Add one to start saving toward retirement.</p>';
+
+    var body = periods.map(function (p, i) {
+      var st = E.contributionStats(p, nowAbs, retireAbs);
+      var endCell = (p.endYear == null || p.endYear === '')
+        ? monthYear('contributionPeriods.' + i + '.end', p.endMonth, p.endYear, 'retire') +
+          '<span class="end-hint">blank = until retirement</span>'
+        : monthYear('contributionPeriods.' + i + '.end', p.endMonth, p.endYear, 'retire');
+      return '<div class="trow contrib-row">' +
+        '<span class="td td-name">' + textInput('scenario', 'contributionPeriods.' + i + '.name', p.name, 'Name (e.g. After raise)', 'grow') + '</span>' +
+        '<span class="td td-date">' + monthYear('contributionPeriods.' + i + '.start', p.startMonth, p.startYear) + '</span>' +
+        '<span class="td td-date">' + endCell + '</span>' +
+        '<span class="td td-amt">' + moneyInput('scenario', 'contributionPeriods.' + i + '.monthly', p.monthly, '$/mo') + '</span>' +
+        '<span class="td td-num mono">' + st.months + '</span>' +
+        '<span class="td td-num mono">' + shortMoney(st.total) + '</span>' +
+        '<button class="btn-x" data-action="remove-row" data-list="contributionPeriods" data-index="' + i + '">✕</button>' +
+      '</div>';
+    }).join('');
+
+    return '<div class="ttable contrib-table">' +
+      '<div class="trow thead">' +
+        '<span class="td td-name">Name</span>' +
+        '<span class="td td-date">Start</span>' +
+        '<span class="td td-date">End</span>' +
+        '<span class="td td-amt">Monthly $</span>' +
+        '<span class="td td-num">Months</span>' +
+        '<span class="td td-num">Total</span>' +
+        '<span class="td td-x"></span>' +
+      '</div>' + body +
+    '</div>';
+  }
+
+  // Lump Sum Events — Name · Date · Age · Amount, with a total row.
+  function lumpTable(state, s) {
+    var E = global.RetEngine;
+    var lumps = s.lumpSums || [];
+    if (!lumps.length) return '<p class="muted small">No lump-sum events yet. Add inheritances, business sales, or one-time withdrawals (use a negative amount).</p>';
+
+    var total = 0;
+    var body = lumps.map(function (l, i) {
+      total += num(l.amount);
+      var absM = (l.year != null && l.year !== '') ? E._helpers.toAbs(num(l.month) || 1, num(l.year)) : null;
+      return '<div class="trow lump-row">' +
+        '<span class="td td-name">' + textInput('scenario', 'lumpSums.' + i + '.label', l.label, 'Name (e.g. Sale of business)', 'grow') + '</span>' +
+        '<span class="td td-date">' + monthYear('lumpSums.' + i + '.', l.month, l.year) + '</span>' +
+        '<span class="td td-num mono age">' + ageAt(state, absM) + '</span>' +
+        '<span class="td td-amt">' + moneyInput('scenario', 'lumpSums.' + i + '.amount', l.amount, 'Amount (+/-)') + '</span>' +
         '<button class="btn-x" data-action="remove-row" data-list="lumpSums" data-index="' + i + '">✕</button>' +
       '</div>';
     }).join('');
+
+    return '<div class="ttable lump-table">' +
+      '<div class="trow thead">' +
+        '<span class="td td-name">Name</span>' +
+        '<span class="td td-date">Date</span>' +
+        '<span class="td td-num">Age</span>' +
+        '<span class="td td-amt">Amount</span>' +
+        '<span class="td td-x"></span>' +
+      '</div>' + body +
+      '<div class="trow tfoot">' +
+        '<span class="td td-name">Total lump sums</span>' +
+        '<span class="td td-date"></span><span class="td td-num"></span>' +
+        '<span class="td td-amt mono">' + fmtMoney(total) + '</span>' +
+        '<span class="td td-x"></span>' +
+      '</div>' +
+    '</div>';
   }
-  function contribRows(s) {
-    if (!(s.contributionChanges || []).length) return '<p class="muted small">None yet.</p>';
-    return s.contributionChanges.map(function (c, i) {
-      return '<div class="row">' +
-        '<span class="lbl">starting</span>' +
-        monthSelect('scenario', 'contributionChanges.' + i + '.month', c.month) +
-        yearInput('scenario', 'contributionChanges.' + i + '.year', c.year) +
-        '<span class="lbl">new monthly</span>' +
-        moneyInput('scenario', 'contributionChanges.' + i + '.newMonthly', c.newMonthly, '$/mo') +
-        '<button class="btn-x" data-action="remove-row" data-list="contributionChanges" data-index="' + i + '">✕</button>' +
-      '</div>';
-    }).join('');
-  }
+
   function incomeRows(s) {
     if (!(s.extraIncome || []).length) return '<p class="muted small">None yet.</p>';
     return s.extraIncome.map(function (e, i) {
@@ -138,6 +210,27 @@
     }).join('');
   }
 
+  // Update only the computed (non-input) cells in the contribution + lump tables
+  // so typing an amount reflects in Months/Total without rebuilding inputs.
+  function refreshComputedCells(state, s) {
+    var E = global.RetEngine;
+    var now = state.now, nowAbs = E._helpers.toAbs(now.month, now.year);
+    var pa = state.settings.personA || {};
+    var retireAbs = (pa.birthYear ? pa.birthYear * 12 + ((pa.birthMonth || 1) - 1) : nowAbs) +
+      (num(s.retireAge) || 65) * 12;
+    document.querySelectorAll('.contrib-table .contrib-row').forEach(function (row, i) {
+      var p = (s.contributionPeriods || [])[i]; if (!p) return;
+      var st = E.contributionStats(p, nowAbs, retireAbs);
+      var nums = row.querySelectorAll('.td-num');
+      if (nums[0]) nums[0].textContent = st.months;
+      if (nums[1]) nums[1].textContent = shortMoney(st.total);
+    });
+    var total = 0;
+    (s.lumpSums || []).forEach(function (l) { total += num(l.amount); });
+    var foot = document.querySelector('.lump-table .tfoot .td-amt');
+    if (foot) foot.textContent = fmtMoney(total);
+  }
+
   function renderScenarioEditor(state) {
     var s = state.scenarios.filter(function (x) { return x.id === state.editingId; })[0];
     if (!s) return '';
@@ -149,18 +242,18 @@
         '<div class="field"><label>Your SS claiming age</label>' + claimSelect('scenario', 'claimAgeA', s.claimAgeA) + '</div>' +
         '<div class="field"><label>Spouse SS claiming age</label>' + claimSelect('scenario', 'claimAgeB', s.claimAgeB) + '</div>' +
         '<div class="field"><label>Starting balance (blank = use settings)</label>' + moneyInput('scenario', 'startingBalance', s.startingBalance, '$') + '</div>' +
-        '<div class="field"><label>Base monthly contribution</label>' + moneyInput('scenario', 'monthlyContribution', s.monthlyContribution, '$/mo') + '</div>' +
         '<div class="field"><label>Retirement spending (today\'s $/mo)</label>' + moneyInput('scenario', 'retirementSpending', s.retirementSpending, '$/mo') + '</div>' +
       '</div>' +
 
-      '<div class="sub"><div class="sub-head"><h4>Lump sums</h4>' +
-        '<button class="btn small" data-action="add-row" data-list="lumpSums">+ Add lump sum</button></div>' +
-        '<div class="rows">' + lumpRows(s) + '</div>' +
-        '<p class="muted small">Use a negative amount for a one-time withdrawal (e.g. buying a car).</p></div>' +
+      '<div class="sub"><div class="sub-head"><h4>Monthly contributions</h4>' +
+        '<button class="btn small" data-action="add-row" data-list="contributionPeriods">+ Add period</button></div>' +
+        contribTable(state, s) +
+        '<p class="muted small">Each row is a time period — they can\'t overlap, so setting a new Start automatically ends the period before it the month prior. Leave a gap for months you contribute nothing, or add a $0 row to label a lapse. Blank End = contribute until retirement.</p></div>' +
 
-      '<div class="sub"><div class="sub-head"><h4>Contribution changes</h4>' +
-        '<button class="btn small" data-action="add-row" data-list="contributionChanges">+ Add change</button></div>' +
-        '<div class="rows">' + contribRows(s) + '</div></div>' +
+      '<div class="sub"><div class="sub-head"><h4>Lump-sum events</h4>' +
+        '<button class="btn small" data-action="add-row" data-list="lumpSums">+ Add lump sum</button></div>' +
+        lumpTable(state, s) +
+        '<p class="muted small">One-time deposits (inheritance, business sale). Use a negative amount for a one-time withdrawal.</p></div>' +
 
       '<div class="sub"><div class="sub-head"><h4>Extra income</h4>' +
         '<button class="btn small" data-action="add-row" data-list="extraIncome">+ Add income</button></div>' +
@@ -174,14 +267,19 @@
     var r = global.RetEngine.projectScenario(s, state.settings, { now: state.now });
     var sm = r.summary;
     return '<div class="metrics-inline">' +
-      metric('Nest egg at age ' + sm.retireAge, fmtMoney(sm.nestEggAtRetirement)) +
-      metric('Monthly income at retirement', fmtMoney(sm.retirementMonthlyIncome)) +
-      metric('Balance at age 90', fmtMoney(sm.balanceAt90)) +
+      metric('Nest egg at age ' + sm.retireAge, fmtMoney(sm.nestEggAtRetirement), sm.nestEggAtRetirementReal) +
+      metric('Monthly income at retirement', fmtMoney(sm.retirementMonthlyIncome), sm.retirementMonthlyIncomeReal) +
+      metric('Balance at age 90', fmtMoney(sm.balanceAt90), sm.balanceAt90Real) +
       metric('Money runs out', sm.depletionAge ? 'age ' + sm.depletionAge : 'never ✓') +
     '</div>';
   }
-  function metric(label, val) {
-    return '<div class="metric"><div class="m-val">' + esc(val) + '</div><div class="m-label">' + esc(label) + '</div></div>';
+  // metric(label, nominalText, [realNumber]) — when a real value is given, show a
+  // today's-dollars buying-power subline beneath the actual (nominal) figure.
+  function metric(label, val, real) {
+    var sub = (real != null && !isNaN(real))
+      ? '<div class="m-real">≈ ' + esc(fmtMoney(real)) + ' in today\'s $</div>' : '';
+    return '<div class="metric"><div class="m-val">' + esc(val) + '</div>' + sub +
+      '<div class="m-label">' + esc(label) + '</div></div>';
   }
 
   function renderScenarios(state) {
@@ -220,14 +318,36 @@
       : '<p class="muted">Select one or more scenarios above to compare them.</p>';
 
     return '<div class="tab-pane">' +
-      '<p class="intro">Pick scenarios to compare side by side.</p>' +
+      '<div class="bar"><p class="intro" style="margin:0">Pick scenarios to compare side by side.</p>' +
+        dollarBasisToggle(state) + '</div>' +
       '<div class="card"><div class="picker">' + picker + '</div></div>' +
       '<div class="card">' + table + '</div>' +
-      '<div class="card"><h3>Projected balance over time</h3><div class="chart-wrap"><canvas id="balanceChart"></canvas></div></div>' +
+      '<div class="card"><h3>Projected balance over time</h3>' + chartBasisNote(state) +
+        '<div class="chart-wrap"><canvas id="balanceChart"></canvas></div></div>' +
     '</div>';
   }
 
+  // Toggle: actual future dollars vs. today's-dollars buying power.
+  function dollarBasisToggle(state) {
+    var real = state.dollarBasis === 'real';
+    return '<div class="basis-toggle" role="group" aria-label="Dollar basis">' +
+      '<button class="basis-btn' + (!real ? ' active' : '') + '" data-action="set-basis" data-basis="nominal" ' +
+        'title="The actual dollar amounts in each future year">Actual $</button>' +
+      '<button class="basis-btn' + (real ? ' active' : '') + '" data-action="set-basis" data-basis="real" ' +
+        'title="Adjusted for inflation — what the money is worth in today\'s buying power">Today\'s $</button>' +
+    '</div>';
+  }
+  function chartBasisNote(state) {
+    var real = state.dollarBasis === 'real';
+    return '<p class="muted small basis-note">Showing <strong>' +
+      (real ? "today's dollars" : 'actual future dollars') + '</strong>' +
+      (real ? ' — adjusted for inflation to reflect real buying power.' : ' — the raw amounts in each year.') +
+      ' Use the toggle above to switch.</p>';
+  }
+
   function buildCompareTable(state, selected) {
+    var real = state.dollarBasis === 'real';
+    var k = real ? 'Real' : '';
     var projs = selected.map(function (s) {
       return { name: s.name, p: global.RetEngine.projectScenario(s, state.settings, { now: state.now }) };
     });
@@ -236,11 +356,13 @@
       return '<tr><td class="metric-name">' + label + '</td>' +
         projs.map(function (x) { return '<td>' + fn(x.p.summary) + '</td>'; }).join('') + '</tr>';
     }
-    return '<h3>Comparison</h3><div class="table-scroll"><table class="compare"><thead><tr>' + head + '</tr></thead><tbody>' +
+    var basisLabel = real ? "today's $" : 'actual $';
+    return '<h3>Comparison <span class="h3-tag">' + basisLabel + '</span></h3>' +
+      '<div class="table-scroll"><table class="compare"><thead><tr>' + head + '</tr></thead><tbody>' +
       row('Retirement age', function (m) { return m.retireAge; }) +
-      row('Nest egg at retirement', function (m) { return fmtMoney(m.nestEggAtRetirement); }) +
-      row('Monthly income at retirement', function (m) { return fmtMoney(m.retirementMonthlyIncome); }) +
-      row('Balance at age 90', function (m) { return fmtMoney(m.balanceAt90); }) +
+      row('Nest egg at retirement', function (m) { return fmtMoney(m['nestEggAtRetirement' + k]); }) +
+      row('Monthly income at retirement', function (m) { return fmtMoney(m['retirementMonthlyIncome' + k]); }) +
+      row('Balance at age 90', function (m) { return fmtMoney(m['balanceAt90' + k]); }) +
       row('Money runs out', function (m) { return m.depletionAge ? 'age ' + m.depletionAge : 'never ✓'; }) +
     '</tbody></table></div>';
   }
@@ -251,6 +373,7 @@
     renderScenarios: renderScenarios,
     renderDashboard: renderDashboard,
     renderMiniSummary: renderMiniSummary,
+    refreshComputedCells: refreshComputedCells,
     fmtMoney: fmtMoney,
     esc: esc
   };

@@ -120,7 +120,8 @@
       } else {
         var ssA = ssIncome(personA, num(scenario.claimAgeA, retireAge), absM, nowAbs, ssColaPct);
         var ssB = ssIncome(personB, num(scenario.claimAgeB, retireAge), absM, nowAbs, ssColaPct);
-        var vaInc = has(va.monthly) ? inflate(num(va.monthly), num(va.colaPct, ssColaPct), absM - nowAbs) : 0;
+        // VA disability rises by the same legally-mandated COLA as Social Security.
+        var vaInc = has(va.monthly) ? inflate(num(va.monthly), ssColaPct, absM - nowAbs) : 0;
         incomeGross += ssA + ssB + vaInc;
         incomeTaxable += ssA + ssB; // SS counted taxable (simplified); VA is tax-free
 

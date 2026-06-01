@@ -79,9 +79,9 @@
       '<p class="intro">Your profile and assumptions. These feed every scenario. Everything saves automatically.</p>' +
       '<div class="grid2">' + personFields('personA', s.personA || {}) + personFields('personB', s.personB || {}) + '</div>' +
       '<div class="card"><h3>Other income &amp; savings</h3>' +
-        '<div class="field inline"><label>VA disability (tax-free, monthly)</label>' +
+        '<div class="field inline"><label>VA disability (today\'s $, tax-free, monthly)</label>' +
           moneyInput('settings', 'settings.vaDisability.monthly', va.monthly, '$/mo') +
-          '<span class="lbl">COLA %</span>' + numInput('settings', 'settings.vaDisability.colaPct', va.colaPct, '%', 'pct') + '</div>' +
+          '<span class="lbl">rises with SS COLA</span></div>' +
         '<div class="field inline"><label>Current total savings / investments</label>' +
           moneyInput('settings', 'settings.currentSavings', s.currentSavings, '$') + '</div>' +
       '</div>' +

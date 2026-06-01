@@ -249,6 +249,7 @@
         break;
       }
       case 'set-basis': state.dollarBasis = btn.dataset.basis; persist(); render(); break;
+      case 'sort': sortList(btn.dataset.sortList, btn.dataset.sortKey); break;
       case 'toggle-theme': toggleTheme(); break;
       case 'backup-download': S.exportFile(stripState()); break;
       case 'backup-restore': document.getElementById('restore-input').click(); break;
@@ -303,6 +304,80 @@
     persist(); render();
   }
 
+  /* --------------------------- sort & drag rows --------------------------- */
+  // Sort comparators per (list,key). Dates compare by absolute month.
+  function sortKeyVal(list, item, key) {
+    if (key === 'date') return absOf(item.month, item.year);
+    if (key === 'start') return absOf(item.startMonth, item.startYear);
+    if (key === 'end') return item.endYear == null || item.endYear === '' ? Infinity : absOf(item.endMonth || 12, item.endYear);
+    if (key === 'age') return absOf(item.month, item.year);
+    if (key === 'amount') return parseFloat(item.amount) || 0;
+    if (key === 'monthly') return parseFloat(item.monthly) || 0;
+    if (key === 'label') return (item.label || '').toLowerCase();
+    return 0;
+  }
+  function absOf(m, y) {
+    if (y == null || y === '') return Infinity;
+    return (+y) * 12 + ((+m || 1) - 1);
+  }
+  function sortList(list, key) {
+    var s = editingScenario();
+    if (!s || !s[list]) return;
+    state.sortBy = state.sortBy || {};
+    var cur = state.sortBy[list];
+    var dir = (cur && cur.key === key && cur.dir === 'asc') ? 'desc' : 'asc';
+    state.sortBy[list] = { key: key, dir: dir };
+    s[list].sort(function (a, b) {
+      var av = sortKeyVal(list, a, key), bv = sortKeyVal(list, b, key);
+      if (av < bv) return dir === 'asc' ? -1 : 1;
+      if (av > bv) return dir === 'asc' ? 1 : -1;
+      return 0;
+    });
+    persist(); render();
+  }
+
+  // HTML5 drag-and-drop reordering for Lump Sums and Extra Income rows.
+  var dragCtx = null;
+  function onDragStart(e) {
+    var row = e.target.closest('.trow[draggable="true"]');
+    if (!row) return;
+    dragCtx = { list: row.dataset.list, from: +row.dataset.index };
+    row.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+    try { e.dataTransfer.setData('text/plain', String(dragCtx.from)); } catch (x) {}
+  }
+  function onDragOver(e) {
+    if (!dragCtx) return;
+    var row = e.target.closest('.trow[draggable="true"]');
+    if (!row || row.dataset.list !== dragCtx.list) return;
+    e.preventDefault();
+    document.querySelectorAll('.trow.drop-target').forEach(function (r) { r.classList.remove('drop-target'); });
+    row.classList.add('drop-target');
+  }
+  function onDrop(e) {
+    if (!dragCtx) return;
+    var row = e.target.closest('.trow[draggable="true"]');
+    if (!row || row.dataset.list !== dragCtx.list) { cleanupDrag(); return; }
+    e.preventDefault();
+    var to = +row.dataset.index;
+    moveRow(dragCtx.list, dragCtx.from, to);
+    cleanupDrag();
+  }
+  function cleanupDrag() {
+    document.querySelectorAll('.dragging, .drop-target').forEach(function (r) { r.classList.remove('dragging', 'drop-target'); });
+    dragCtx = null;
+  }
+  function moveRow(list, from, to) {
+    var s = editingScenario();
+    if (!s || !s[list] || from === to) return;
+    var arr = s[list];
+    var item = arr.splice(from, 1)[0];
+    arr.splice(to, 0, item);
+    // Manual reorder clears any active column sort for that list.
+    if (state.sortBy && state.sortBy[list]) delete state.sortBy[list];
+    persist(); render();
+  }
+
   function stripState() { var c = JSON.parse(JSON.stringify(state)); delete c.now; return c; }
 
   function onRestore(e) {
@@ -328,6 +403,10 @@
       else onFieldChange(e); // selects & checkboxes
     });
     document.addEventListener('click', onClick);
+    document.addEventListener('dragstart', onDragStart);
+    document.addEventListener('dragover', onDragOver);
+    document.addEventListener('drop', onDrop);
+    document.addEventListener('dragend', cleanupDrag);
     if (!state.theme) {
       state.theme = (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) ? 'light' : 'dark';
     }

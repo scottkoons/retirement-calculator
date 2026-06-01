@@ -9,7 +9,9 @@
   var state = S.load();
   state.now = { month: new Date().getMonth() + 1, year: new Date().getFullYear() };
   var chart = null;
-  var CHART_COLORS = ['#2563eb', '#16a34a', '#dc2626', '#9333ea', '#ea580c', '#0891b2', '#ca8a04'];
+  // Dashboard accent palette — bright lines that read on the dark grid.
+  var CHART_COLORS = ['#2dd4bf', '#34d399', '#fbbf24', '#fb7185', '#22d3ee', '#a3e635', '#f472b6'];
+  var CHART_INK = '#aab6c8', CHART_GRID = 'rgba(43, 53, 74, 0.6)', CHART_PANEL = '#0d1219';
 
   function genId() { return 'sc_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 7); }
 
@@ -88,8 +90,8 @@
       return {
         label: s.name,
         data: r.rows.map(function (row) { return { x: row.age, y: row.balance }; }),
-        borderColor: color, backgroundColor: color,
-        tension: 0.2, pointRadius: 0, borderWidth: 2
+        borderColor: color, backgroundColor: color, pointBackgroundColor: color,
+        tension: 0.25, pointRadius: 0, pointHoverRadius: 4, borderWidth: 2
       };
     });
 
@@ -98,15 +100,24 @@
       data: { datasets: datasets },
       options: {
         responsive: true, maintainAspectRatio: false,
+        color: CHART_INK,
+        font: { family: "'JetBrains Mono', monospace" },
         interaction: { mode: 'nearest', intersect: false },
         scales: {
-          x: { type: 'linear', title: { display: true, text: 'Your age' }, ticks: { stepSize: 5 } },
-          y: { title: { display: true, text: 'Portfolio balance' },
-               ticks: { callback: function (v) { return '$' + (v / 1000).toLocaleString() + 'k'; } } }
+          x: { type: 'linear', title: { display: true, text: 'YOUR AGE', color: CHART_INK },
+               ticks: { stepSize: 5, color: CHART_INK }, grid: { color: CHART_GRID, drawTicks: false },
+               border: { color: CHART_GRID } },
+          y: { title: { display: true, text: 'PORTFOLIO BALANCE', color: CHART_INK },
+               ticks: { color: CHART_INK, callback: function (v) { return '$' + (v / 1000).toLocaleString() + 'k'; } },
+               grid: { color: CHART_GRID, drawTicks: false }, border: { color: CHART_GRID } }
         },
         plugins: {
-          legend: { position: 'bottom' },
-          tooltip: { callbacks: { label: function (c) { return c.dataset.label + ': ' + UI.fmtMoney(c.parsed.y) + ' (age ' + Math.round(c.parsed.x) + ')'; } } }
+          legend: { position: 'bottom', labels: { color: CHART_INK, usePointStyle: true, pointStyle: 'line', boxWidth: 24, padding: 16 } },
+          tooltip: {
+            backgroundColor: CHART_PANEL, borderColor: 'rgba(45,212,191,0.4)', borderWidth: 1,
+            titleColor: '#e6edf6', bodyColor: '#aab6c8', padding: 10, cornerRadius: 6,
+            callbacks: { label: function (c) { return c.dataset.label + ': ' + UI.fmtMoney(c.parsed.y) + ' (age ' + Math.round(c.parsed.x) + ')'; } }
+          }
         }
       }
     });

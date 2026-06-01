@@ -4,24 +4,24 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="description" content="A free, private retirement planner. Build and compare what-if scenarios — Social Security claiming ages, lump sums, contributions and spending — with automatic saving.">
-  <meta name="theme-color" content="#0f172a">
+  <meta name="theme-color" content="#0a0e14">
   <title>Retirement Calculator</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
   <header class="app-header">
     <div class="brand">
       <span class="logo" aria-hidden="true">
-        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M3 3v18h18"></path>
           <path d="M19 9l-5 5-4-4-4 4"></path>
         </svg>
       </span>
       <div class="brand-text">
-        <h1>Retirement Calculator</h1>
+        <h1>Retirement<span class="brand-dim">Calc</span></h1>
         <span id="save-status" class="save-status ok">All changes saved</span>
       </div>
     </div>
@@ -34,10 +34,10 @@
 
     <div class="backup">
       <button class="btn small ghost" data-action="backup-download" title="Save a copy to a file">
-        <span class="btn-ico" aria-hidden="true">⭳</span> Backup
+        <span class="btn-ico" aria-hidden="true">↓</span> Backup
       </button>
       <button class="btn small ghost" data-action="backup-restore" title="Load a backup file">
-        <span class="btn-ico" aria-hidden="true">⭱</span> Restore
+        <span class="btn-ico" aria-hidden="true">↑</span> Restore
       </button>
       <input type="file" id="restore-input" accept="application/json" hidden>
     </div>

@@ -11,8 +11,9 @@
   var chart = null;
   // Dashboard accent palette — distinct lines that read on either theme.
   var CHART_COLORS = ['#14b8a6', '#f59e0b', '#6366f1', '#ec4899', '#0891b2', '#84cc16', '#ef4444'];
-  // Stable per-scenario accent colors (used for header pills and the chart).
-  var SCENARIO_COLORS = ['#8b5cf6', '#ec4899', '#14b8a6', '#f59e0b', '#3b82f6', '#84cc16', '#ef4444', '#06b6d4'];
+  // Stable per-scenario accent colors (chart lines + chips). Orange leads so a
+  // single-scenario chart matches the dashboard's accent.
+  var SCENARIO_COLORS = ['#f97316', '#8b5cf6', '#ec4899', '#14b8a6', '#3b82f6', '#84cc16', '#ef4444', '#06b6d4'];
   function ensureScenarioColors() {
     (state.scenarios || []).forEach(function (s, i) {
       if (!s.color) s.color = SCENARIO_COLORS[i % SCENARIO_COLORS.length];
@@ -25,6 +26,14 @@
   }
 
   function genId() { return 'sc_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 7); }
+
+  // "#rrggbb" -> "rgba(r,g,b,a)" for chart gradients.
+  function hexToRgba(hex, a) {
+    var h = String(hex).replace('#', '');
+    if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+    var n = parseInt(h, 16);
+    return 'rgba(' + ((n >> 16) & 255) + ',' + ((n >> 8) & 255) + ',' + (n & 255) + ',' + a + ')';
+  }
 
   function setByPath(obj, path, value) {
     var parts = path.split('.');
@@ -98,6 +107,20 @@
     if (chart) { chart.destroy(); chart = null; }
     if (!selected.length) return;
 
+    // Soft top-down gradient under each line, fading to transparent — the
+    // "shaded area" look. Lighter when comparing several so they don't muddy.
+    var topAlpha = selected.length > 1 ? 0.16 : 0.4;
+    function areaFill(color) {
+      return function (ctx) {
+        var c = ctx.chart, area = c.chartArea;
+        if (!area) return hexToRgba(color, topAlpha * 0.5);
+        var g = c.ctx.createLinearGradient(0, area.top, 0, area.bottom);
+        g.addColorStop(0, hexToRgba(color, topAlpha));
+        g.addColorStop(1, hexToRgba(color, 0));
+        return g;
+      };
+    }
+
     // Align on a shared set of years using each scenario's age axis.
     var real = state.dollarBasis === 'real';
     var yKey = real ? 'balanceReal' : 'balance';
@@ -107,8 +130,9 @@
       return {
         label: s.name,
         data: r.rows.map(function (row) { return { x: row.age, y: row[yKey] }; }),
-        borderColor: color, backgroundColor: color, pointBackgroundColor: color,
-        tension: 0.25, pointRadius: 0, pointHoverRadius: 4, borderWidth: 2
+        borderColor: color, pointBackgroundColor: color,
+        backgroundColor: areaFill(color), fill: 'origin',
+        tension: 0.35, pointRadius: 0, pointHoverRadius: 4, borderWidth: 2.5
       };
     });
 
@@ -197,8 +221,38 @@
   }
 
   /* ------------------------------- events -------------------------------- */
+  // Dashboard headline sliders (retirement age / average return). While
+  // dragging we update the big number + redraw the chart in place; on release
+  // ('change') we re-render so the comparison table picks up the new values.
+  function onStatSlider(e) {
+    var t = e.target;
+    var val = t.value;
+    if (t.dataset.stat === 'returnPct') {
+      setByPath(state, 'settings.assumptions.returnPct', val);
+    } else if (t.dataset.stat === 'retireAge') {
+      var sc = state.scenarios.filter(function (x) { return x.id === t.dataset.id; })[0];
+      if (sc) sc.retireAge = val;
+    }
+    persist();
+    if (e.type === 'change') { render(); return; }
+    updateStatNumbers();
+    if (state.activeTab === 'dashboard') drawChart();
+  }
+
+  // Refresh just the three big numbers from current state (no DOM rebuild, so
+  // the slider keeps the drag).
+  function updateStatNumbers() {
+    var d = UI.dashboardStats(state);
+    var map = { retireAge: d.age, returnPct: d.ret, start: d.start };
+    document.querySelectorAll('.stat-num[data-stat-val]').forEach(function (el) {
+      var k = el.dataset.statVal;
+      if (map[k] != null) el.textContent = map[k];
+    });
+  }
+
   function onFieldChange(e) {
     var t = e.target;
+    if (t.dataset && t.dataset.stat) { onStatSlider(e); return; }
     if (!t.dataset || !t.dataset.path) return;
     var value = t.type === 'checkbox' ? t.checked : t.value;
 

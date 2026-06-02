@@ -10,6 +10,9 @@
 
   var MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
     'July', 'August', 'September', 'October', 'November', 'December'];
+  // Short labels for the compact date pickers (reads as "Sep 2026").
+  var MONTHS_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var CLAIM_AGES = [62, 63, 64, 65, 66, 67, 68, 69, 70];
   var SS_AGES = [62, 65, 66, 67, 70];
 
@@ -52,7 +55,7 @@
       ' value="' + esc(value) + '" placeholder="' + esc(placeholder || 'YYYY') + '">';
   }
   function monthSelect(scope, path, value) {
-    var opts = MONTHS.map(function (m, i) {
+    var opts = MONTHS_ABBR.map(function (m, i) {
       return '<option value="' + (i + 1) + '"' + ((+value) === (i + 1) ? ' selected' : '') + '>' + m + '</option>';
     }).join('');
     return '<select class="mo" ' + attr(scope, path) + '>' + opts + '</select>';
@@ -414,34 +417,61 @@
     return (Math.round(parseFloat(n) * 10) / 10).toString();
   }
 
+  // Shared source of the three headline figures so the static render and the
+  // live slider updates agree. Returns display strings plus the primary id.
+  function dashboardStats(state) {
+    var s = primaryScenario(state);
+    var a = state.settings.assumptions || {};
+    var age = s && s.retireAge !== '' && s.retireAge != null ? String(s.retireAge) : '—';
+    var ret = oneDecimal(s ? avgReturn(state, s) : a.returnPct);
+    var startRaw = s && s.startingBalance !== '' && s.startingBalance != null
+      ? s.startingBalance : state.settings.currentSavings;
+    var start = (startRaw === '' || startRaw == null) ? '—' : shortMoney(num(startRaw));
+    return {
+      primaryId: s ? s.id : null,
+      name: s ? s.name : 'No scenario yet',
+      hasScenario: !!s,
+      // raw slider values (fall back to sensible mid-points when blank)
+      ageVal: s && s.retireAge !== '' && s.retireAge != null ? num(s.retireAge) : 65,
+      retVal: a.returnPct !== '' && a.returnPct != null ? num(a.returnPct) : 6,
+      age: age, ret: ret, start: start
+    };
+  }
+
   // Three big headline figures, mirroring the reference dashboard: target
   // retirement age, average return, and starting amount. Values are white —
-  // no orange on the numbers (including the dollar sign).
+  // no orange on the numbers (including the dollar sign). The first two carry
+  // a slider so you can dial them in and watch the chart move.
   function statHeader(state) {
-    var s = primaryScenario(state);
-    var name = s ? s.name : 'No scenario yet';
+    var d = dashboardStats(state);
 
-    var age = s && s.retireAge !== '' && s.retireAge != null ? s.retireAge : '—';
-    var ret = oneDecimal(s ? avgReturn(state, s) : (state.settings.assumptions || {}).returnPct);
-    var startRaw = s && s.startingBalance !== '' && s.startingBalance != null
-      ? s.startingBalance : (state.settings.currentSavings);
-    var startNum = num(startRaw);
-    var start = (startRaw === '' || startRaw == null) ? '—' : shortMoney(startNum);
-
-    function card(icon, label, valHtml) {
+    function card(icon, label, key, valHtml, slider) {
       return '<div class="stat-card">' +
         '<div class="stat-top"><span class="stat-label">' + label + '</span>' +
         '<span class="stat-ico" aria-hidden="true">' + icon + '</span></div>' +
-        '<div class="stat-value">' + valHtml + '</div></div>';
+        '<div class="stat-value">' + valHtml + '</div>' +
+        (slider || '') + '</div>';
     }
+    function valNum(key, text, unit) {
+      return '<span class="stat-num" data-stat-val="' + key + '">' + esc(text) + '</span>' +
+        (unit ? '<span class="stat-unit">' + unit + '</span>' : '');
+    }
+    // Retirement-age slider targets the primary scenario; return slider edits
+    // the shared Settings assumption (it feeds every scenario).
+    var ageSlider = d.hasScenario
+      ? '<input type="range" class="stat-slider" min="50" max="75" step="1" value="' + d.ageVal +
+        '" data-stat="retireAge" data-id="' + d.primaryId + '" aria-label="Target retirement age">'
+      : '';
+    var retSlider = '<input type="range" class="stat-slider" min="0" max="12" step="0.1" value="' + d.retVal +
+      '" data-stat="returnPct" aria-label="Average return percent">';
 
     return '<div class="stat-head">' +
-      '<div class="stat-context">Showing <strong>' + esc(name) + '</strong>' +
-        (s ? '' : ' — create a scenario to see your numbers') + '</div>' +
+      '<div class="stat-context">Showing <strong>' + esc(d.name) + '</strong>' +
+        (d.hasScenario ? '' : ' — create a scenario to see your numbers') + '</div>' +
       '<div class="stat-row">' +
-        card('▤', 'Target retirement age', esc(String(age)) + '<span class="stat-unit">years</span>') +
-        card('↗', 'Average return', esc(ret) + '<span class="stat-unit">%</span>') +
-        card('▦', 'Starting amount', esc(start)) +
+        card('▤', 'Target retirement age', 'retireAge', valNum('retireAge', d.age, 'years'), ageSlider) +
+        card('↗', 'Average return', 'returnPct', valNum('returnPct', d.ret, '%'), retSlider) +
+        card('▦', 'Starting amount', 'start', valNum('start', d.start, '')) +
       '</div></div>';
   }
 
@@ -525,6 +555,7 @@
     renderSettings: renderSettings,
     renderScenarios: renderScenarios,
     renderDashboard: renderDashboard,
+    dashboardStats: dashboardStats,
     renderMiniSummary: renderMiniSummary,
     refreshComputedCells: refreshComputedCells,
     fmtMoney: fmtMoney,

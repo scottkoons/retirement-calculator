@@ -586,6 +586,30 @@ input.grow { flex: 1; min-width: 150px; }
 
 /* Income breakdown */
 .income-card h3 { margin-bottom: 1.25rem; }
+.ib-cardhead { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: 1.25rem; }
+.ib-cardhead h3 { margin: 0; }
+.ib-x {
+  border: none; background: transparent; color: var(--muted); cursor: pointer;
+  font-size: .68rem; margin-left: .45rem; width: 18px; height: 18px; border-radius: 4px;
+  display: inline-grid; place-items: center; vertical-align: middle;
+}
+.ib-x:hover { color: var(--rose); background: var(--rose-dim); }
+
+/* Income-sources editor (Settings) */
+.isrc-row {
+  display: grid; grid-template-columns: minmax(150px, 1.6fr) 150px 88px 90px 56px 34px;
+  gap: .5rem; align-items: center; padding: .4rem 0;
+}
+.isrc-row input { width: 100%; }
+.isrc-head {
+  font-family: var(--mono); font-size: .62rem; font-weight: 600; text-transform: uppercase;
+  letter-spacing: .07em; color: var(--muted); padding-bottom: .35rem; border-bottom: 1px solid var(--line);
+}
+.isrc-tax { font-size: .8rem; justify-content: center; }
+@media (max-width: 760px) {
+  .isrc-row { grid-template-columns: 1fr 1fr; }
+  .isrc-head { display: none; }
+}
 .ib-sub {
   font-family: var(--sans); text-transform: none; letter-spacing: 0;
   color: var(--muted); font-weight: 500; font-size: .8rem; margin-left: .15rem;

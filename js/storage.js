@@ -20,6 +20,10 @@
         returnThrottle: { preEnabled: false, preYears: 3, preRate: 6, atEnabled: false, atRate: 5 },
         // Withdrawal strategy is global so the same rule compares across scenarios.
         withdrawal: { type: 'spending', ratePct: 4, amount: '', taxable: true },
+        // Global editable income sources (VA, pensions, rental…). Today's $ grown
+        // by each source's COLA to retirement. Social Security stays on its own
+        // claim-age model above. Each: { label, monthly, colaPct, taxable, startAge }.
+        incomeSources: [],
         currentSavings: ''
       },
       scenarios: [],
@@ -43,6 +47,11 @@
       merged.settings.assumptions = Object.assign(defaultState().settings.assumptions, (data.settings || {}).assumptions || {});
       merged.settings.returnThrottle = Object.assign(defaultState().settings.returnThrottle, (data.settings || {}).returnThrottle || {});
       merged.settings.withdrawal = Object.assign(defaultState().settings.withdrawal, (data.settings || {}).withdrawal || {});
+      // One-time migration: fold VA + each scenario's extra income into the new
+      // global income-source list. SS keeps its own claim-age model.
+      if (!data.settings || data.settings.incomeSources === undefined) {
+        merged.settings.incomeSources = migrateIncomeSources(merged);
+      }
       (merged.scenarios || []).forEach(function (s) {
         migrateScenario(s);
         if (global.RetEngine && global.RetEngine.clampContributionPeriods) {
@@ -54,6 +63,33 @@
       console.error('Failed to load state', e);
       return defaultState();
     }
+  }
+
+  // Build the global income-source list from legacy VA + per-scenario extra
+  // income (deduped by name+amount). Runs once for pre-existing data.
+  function migrateIncomeSources(state) {
+    var out = [];
+    var cola = (state.settings.assumptions || {}).ssColaPct;
+    if (cola == null || cola === '') cola = 2.5;
+    var labels = {};   // normalized labels already added (dedupe)
+    function norm(l) { return String(l || '').trim().toLowerCase(); }
+    var va = (state.settings.vaDisability || {}).monthly;
+    if (va != null && va !== '') { out.push({ label: 'VA Benefits', monthly: va, colaPct: cola, taxable: false, startAge: '' }); labels['va benefits'] = 1; }
+    (state.scenarios || []).forEach(function (s) {
+      (s.extraIncome || []).forEach(function (e) {
+        var n = norm(e.label);
+        // Skip streams that duplicate VA/Social Security (those come from above
+        // / the SS claim-age model) or an already-added source.
+        if (labels[n] || n.indexOf('social security') >= 0 || n.indexOf('va benefit') >= 0) return;
+        labels[n] = 1;
+        out.push({
+          label: e.label || 'Other income', monthly: e.monthly || '',
+          colaPct: (e.colaPct == null || e.colaPct === '') ? cola : e.colaPct,
+          taxable: !!e.taxable, startAge: ''
+        });
+      });
+    });
+    return out;
   }
 
   // Convert the legacy contribution model (base amount + dated change rows) into

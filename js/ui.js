@@ -86,15 +86,11 @@
 
   function renderSettings(state) {
     var s = state.settings;
-    var va = s.vaDisability || {};
     var a = s.assumptions || {};
     return '<div class="tab-pane">' +
       '<p class="intro">Your profile and assumptions. These feed every scenario. Everything saves automatically.</p>' +
       '<div class="grid2">' + personFields('personA', s.personA || {}) + personFields('personB', s.personB || {}) + '</div>' +
-      '<div class="card"><h3>Other income &amp; savings</h3>' +
-        '<div class="field inline"><label>VA disability (today\'s $, tax-free, monthly)</label>' +
-          moneyInput('settings', 'settings.vaDisability.monthly', va.monthly, '$/mo') +
-          '<span class="lbl">rises with SS COLA</span></div>' +
+      '<div class="card"><h3>Current savings</h3>' +
         '<div class="field inline"><label>Current total savings / investments</label>' +
           moneyInput('settings', 'settings.currentSavings', s.currentSavings, '$') + '</div>' +
       '</div>' +
@@ -103,8 +99,33 @@
         '<div class="field"><label>Inflation %</label>' + numInput('settings', 'settings.assumptions.inflationPct', a.inflationPct, '%', 'pct') + '</div>' +
         '<div class="field"><label>Social Security COLA %</label>' + numInput('settings', 'settings.assumptions.ssColaPct', a.ssColaPct, '%', 'pct') + '</div>' +
         '<div class="field"><label>Effective tax rate %</label>' + numInput('settings', 'settings.assumptions.effectiveTaxPct', a.effectiveTaxPct, '%', 'pct') + '</div>' +
-      '</div><p class="muted small">Tax applies to Social Security and any income you mark taxable. VA disability is always tax-free.</p></div>' +
+      '</div><p class="muted small">Tax applies to Social Security and any income you mark taxable.</p></div>' +
+      incomeSourcesCard(s.incomeSources || []) +
       returnThrottleCard(s.returnThrottle || {}) +
+    '</div>';
+  }
+
+  // Global income sources (VA, pension, rental, annuity…) — guaranteed income
+  // other than Social Security. Today's $ grown by each source's COLA to
+  // retirement. Shared across all scenarios.
+  function incomeSourcesCard(list) {
+    var head = '<div class="isrc-row isrc-head">' +
+      '<span>Source</span><span>Monthly $ (today)</span><span>COLA %</span><span>Start age</span><span>Tax</span><span></span></div>';
+    var rows = (list || []).map(function (src, i) {
+      var b = 'settings.incomeSources.' + i + '.';
+      return '<div class="isrc-row">' +
+        textInput('settings', b + 'label', src.label, 'e.g. VA Benefits, Pension', 'grow') +
+        moneyInput('settings', b + 'monthly', src.monthly, '$/mo today') +
+        numInput('settings', b + 'colaPct', src.colaPct == null ? 2.5 : src.colaPct, '%', 'pct') +
+        numInput('settings', b + 'startAge', src.startAge, 'retire', 'yr') +
+        '<label class="chk isrc-tax"><input type="checkbox" data-scope="settings" data-path="' + b + 'taxable"' + (src.taxable ? ' checked' : '') + '> tax</label>' +
+        '<button class="btn-x" data-action="remove-income-source" data-index="' + i + '">✕</button>' +
+      '</div>';
+    }).join('');
+    return '<div class="card"><div class="ib-cardhead"><h3>Income sources</h3>' +
+      '<button class="btn small" data-action="add-income-source">+ Add income source</button></div>' +
+      '<p class="muted small">Guaranteed income other than Social Security — VA, pension, rental, annuity. Enter today\'s monthly amount and a COLA; each grows to retirement. Shared across all scenarios. Leave Start age blank to begin at retirement.</p>' +
+      (list && list.length ? head + rows : '<p class="muted small" style="margin:0">No income sources yet — add VA, a pension, or other recurring income.</p>') +
     '</div>';
   }
 
@@ -417,10 +438,6 @@
         lumpTable(state, s),
         'One-time deposits (inheritance, business sale). Use a negative amount for a one-time withdrawal.') +
 
-      sectionCard('income', 'Retirement Income Streams', addBtn('extraIncome', '+ Add income'),
-        incomeTable(state, s),
-        'Recurring income in retirement — pension, rental, business. Tick "tax" if it\'s taxable. Leave "To" blank for lifetime income.') +
-
       sectionCard('return', 'Investment Return by Age', addBtn('returnPhases', '+ Add phase'),
         returnPhaseTable(state, s),
         'Model shifting to safer investments as you age — e.g. 7% from 50–65, 6% from 65–75, 5% after 75. Phases can\'t overlap; the previous phase ends where the next begins. Leave "To age" blank on the last phase to run to the end. With no phases, the single Settings return applies.') +
@@ -598,27 +615,32 @@
         '<p class="muted small" style="margin:0">Add a scenario with spending, Social Security, VA, or other income to see where your retirement income comes from.</p></div>';
     }
     var bd = d.breakdown;
-    var SRC_COLORS = { withdrawal: '#8b5cf6', va: '#ec4899', ssA: '#10b981', ssB: '#fbbf24', extra: '#0891b2' };
+    var SRC_COLORS = { withdrawal: '#8b5cf6', ssA: '#10b981', ssB: '#fbbf24' };
+    var SRC_PALETTE = ['#ec4899', '#0891b2', '#f59e0b', '#a855f7', '#14b8a6', '#ef4444'];
     var max = bd.sources.reduce(function (m, s) { return Math.max(m, s.amount); }, 0) || 1;
     var rows = bd.sources.length
       ? bd.sources.map(function (s) {
-          var color = SRC_COLORS[s.key] || '#0891b2';
+          var color = SRC_COLORS[s.key] || (s.srcIndex != null ? SRC_PALETTE[s.srcIndex % SRC_PALETTE.length] : '#0891b2');
           var pct = Math.max(2, Math.round((s.amount / max) * 100));
           var badge = s.taxable
             ? '<span class="tax-badge tax">Tax</span>'
             : '<span class="tax-badge free">Tax-free</span>';
+          var rm = s.removable
+            ? '<button class="ib-x" data-action="remove-income-source" data-index="' + s.srcIndex + '" title="Remove this income source">✕</button>'
+            : '';
           return '<div class="ib-row">' +
             '<div class="ib-head">' +
-              '<span class="ib-name"><span class="ib-dot" style="background:' + color + '"></span>' + esc(s.label) + ' ' + badge + '</span>' +
+              '<span class="ib-name"><span class="ib-dot" style="background:' + color + '"></span>' + esc(s.label) + ' ' + badge + rm + '</span>' +
               '<span class="ib-amt mono">' + fmtMoney(s.amount) + '</span>' +
             '</div>' +
             '<div class="ib-track"><span class="ib-fill" style="width:' + pct + '%;background:' + color + '"></span></div>' +
           '</div>';
         }).join('')
-      : '<p class="muted small" style="margin:0">No income at this age yet — adjust spending, claiming ages, or income streams.</p>';
+      : '<p class="muted small" style="margin:0">No income at this age yet — adjust spending, claiming ages, or income.</p>';
 
     return '<div class="card income-card">' +
-      '<h3>Income breakdown <span class="ib-sub">at age ' + esc(String(bd.age)) + ' · ' + esc(d.name) + '</span></h3>' +
+      '<div class="ib-cardhead"><h3>Income breakdown <span class="ib-sub">at age ' + esc(String(bd.age)) + ' · ' + esc(d.name) + '</span></h3>' +
+        '<button class="btn small ghost" data-action="add-income-source" title="Add an income source (VA, pension, rental…)">+ Add income</button></div>' +
       '<div class="ib-list">' + rows + '</div>' +
       '<div class="ib-totals">' +
         '<div class="ib-total taxable"><span class="ib-total-lbl">Taxable / mo</span><span class="ib-total-val mono">' + fmtMoney(bd.taxableMonthly) + '</span></div>' +

@@ -443,6 +443,14 @@
         persist(); render(); break;
       }
       case 'print-plan': window.print(); break;
+      case 'add-income-source':
+        state.settings.incomeSources = state.settings.incomeSources || [];
+        state.settings.incomeSources.push({ label: '', monthly: '', colaPct: 2.5, taxable: false, startAge: '' });
+        state.activeTab = 'settings';     // jump to the editor to fill it in
+        persist(); render(); break;
+      case 'remove-income-source':
+        (state.settings.incomeSources || []).splice(+btn.dataset.index, 1);
+        persist(); render(); break;
       case 'chip-select': {
         // Legacy: toggle a scenario in/out of the comparison set.
         var ix = state.selectedScenarioIds.indexOf(id);
@@ -691,6 +699,7 @@
     }
     applyTheme();
     render();
+    persist();        // save any one-time migrations (e.g. income sources)
     flagSaved(true);
   }
 

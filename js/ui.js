@@ -557,11 +557,14 @@
         '<p class="muted small" style="margin:0">No scenarios yet. </p>' +
         '<button class="scn-chip add" data-action="add-scenario">+ New scenario</button></div>';
     }
-    var chips = state.scenarios.map(function (s) {
+    var chips = state.scenarios.map(function (s, i) {
       var on = state.selectedScenarioIds.indexOf(s.id) >= 0 ? ' on' : '';
-      return '<button class="scn-chip' + on + '" data-action="chip-select" data-id="' + s.id + '" title="Toggle in comparison">' +
-        '<span class="pill-dot" style="background:' + (s.color || '#888') + '"></span>' +
-        '<span class="pill-name">' + esc(s.name) + '</span></button>';
+      return '<div class="scn-chip' + on + '" draggable="true" data-index="' + i + '" data-id="' + s.id + '" title="Drag to reorder">' +
+        '<button class="scn-pick" data-action="chip-select" data-id="' + s.id + '" title="Toggle in comparison">' +
+          '<span class="pill-dot" style="background:' + (s.color || '#888') + '"></span>' +
+          '<span class="pill-name">' + esc(s.name) + '</span></button>' +
+        '<button class="scn-copy" data-action="duplicate-scenario" data-id="' + s.id + '" title="Duplicate this scenario" aria-label="Duplicate ' + esc(s.name) + '">⧉</button>' +
+      '</div>';
     }).join('');
     chips += '<button class="scn-chip add" data-action="add-scenario" title="New scenario">+ New</button>';
     return '<div class="scenario-bar">' + chips + '</div>';

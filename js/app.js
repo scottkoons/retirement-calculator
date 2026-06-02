@@ -529,18 +529,34 @@
     persist(); render();
   }
 
-  // HTML5 drag-and-drop reordering for Lump Sums and Extra Income rows.
+  // HTML5 drag-and-drop reordering for scenario chips and for table rows.
   var dragCtx = null;
   function onDragStart(e) {
+    var chip = e.target.closest('.scn-chip[draggable="true"]');
+    if (chip) {
+      dragCtx = { kind: 'chip', from: +chip.dataset.index };
+      chip.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+      try { e.dataTransfer.setData('text/plain', String(dragCtx.from)); } catch (x) {}
+      return;
+    }
     var row = e.target.closest('.trow[draggable="true"]');
     if (!row) return;
-    dragCtx = { list: row.dataset.list, from: +row.dataset.index };
+    dragCtx = { kind: 'row', list: row.dataset.list, from: +row.dataset.index };
     row.classList.add('dragging');
     e.dataTransfer.effectAllowed = 'move';
     try { e.dataTransfer.setData('text/plain', String(dragCtx.from)); } catch (x) {}
   }
   function onDragOver(e) {
     if (!dragCtx) return;
+    if (dragCtx.kind === 'chip') {
+      var chip = e.target.closest('.scn-chip[draggable="true"]');
+      if (!chip) return;
+      e.preventDefault();
+      document.querySelectorAll('.scn-chip.drop-target').forEach(function (c) { c.classList.remove('drop-target'); });
+      chip.classList.add('drop-target');
+      return;
+    }
     var row = e.target.closest('.trow[draggable="true"]');
     if (!row || row.dataset.list !== dragCtx.list) return;
     e.preventDefault();
@@ -549,6 +565,11 @@
   }
   function onDrop(e) {
     if (!dragCtx) return;
+    if (dragCtx.kind === 'chip') {
+      var chip = e.target.closest('.scn-chip[draggable="true"]');
+      if (chip) { e.preventDefault(); moveScenario(dragCtx.from, +chip.dataset.index); }
+      cleanupDrag(); return;
+    }
     var row = e.target.closest('.trow[draggable="true"]');
     if (!row || row.dataset.list !== dragCtx.list) { cleanupDrag(); return; }
     e.preventDefault();
@@ -559,6 +580,13 @@
   function cleanupDrag() {
     document.querySelectorAll('.dragging, .drop-target').forEach(function (r) { r.classList.remove('dragging', 'drop-target'); });
     dragCtx = null;
+  }
+  function moveScenario(from, to) {
+    var arr = state.scenarios;
+    if (from === to || from == null || from < 0 || to < 0 || from >= arr.length || to >= arr.length) return;
+    var item = arr.splice(from, 1)[0];
+    arr.splice(to, 0, item);
+    persist(); render();
   }
   function moveRow(list, from, to) {
     var s = editingScenario();

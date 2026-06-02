@@ -393,6 +393,7 @@
     switch (action) {
       case 'add-scenario': addScenario(); break;
       case 'edit-scenario': state.editingId = id; persist(); render(); break;
+      case 'toggle-edit': state.editingId = (state.editingId === id ? null : id); persist(); render(); break;
       case 'pill-edit': state.activeTab = 'scenarios'; state.editingId = id; persist(); render(); break;
       case 'chip-select': {
         // Toggle a scenario in/out of the dashboard comparison.
@@ -625,7 +626,13 @@
     });
     document.addEventListener('click', onClick);
     document.addEventListener('keydown', function (e) {
-      if (e.key === 'Escape' && state.chartExpanded) { state.chartExpanded = false; render(); }
+      if (e.key === 'Escape' && state.chartExpanded) { state.chartExpanded = false; render(); return; }
+      // Enter/Space toggles an accordion scenario row (it's a clickable div).
+      if ((e.key === 'Enter' || e.key === ' ') && e.target.dataset && e.target.dataset.action === 'toggle-edit') {
+        e.preventDefault();
+        state.editingId = (state.editingId === e.target.dataset.id ? null : e.target.dataset.id);
+        persist(); render();
+      }
     });
     document.addEventListener('dragstart', onDragStart);
     document.addEventListener('dragover', onDragOver);

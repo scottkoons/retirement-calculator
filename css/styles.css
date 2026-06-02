@@ -331,25 +331,33 @@ input.grow { flex: 1; min-width: 150px; }
 }
 .btn-x:hover { background: var(--rose-dim); color: var(--rose); }
 
-/* ============================ Scenario list ============================ */
+/* ============================ Scenario list (accordion) ============================ */
 .scen-list { list-style: none; padding: 0; margin: 0 0 1.2rem; display: grid; gap: .55rem; }
-.scen-list li {
-  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
-  padding: .85rem 1rem .85rem 1.1rem;
-  background: var(--panel); border: 1px solid var(--line);
-  border-radius: var(--radius);
+.scen-item {
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
   position: relative; overflow: hidden;
-  transition: border-color .16s ease, background .16s ease;
+  transition: border-color .16s ease;
 }
-.scen-list li::before {
+.scen-item::before {
   content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
   background: transparent; transition: background .16s ease, box-shadow .16s ease;
 }
-.scen-list li:hover { border-color: var(--line-strong); background: var(--panel-2); }
-.scen-list li.active { border-color: rgba(45,212,191,.5); background: var(--panel-2); }
-.scen-list li.active::before { background: var(--cyan); box-shadow: 0 0 12px 1px rgba(45,212,191,.6); }
-.scen-name { font-weight: 600; font-size: .98rem; color: var(--ink); font-family: var(--display); }
-.scen-actions { display: flex; gap: .4rem; flex-wrap: wrap; }
+.scen-item:hover { border-color: var(--line-strong); }
+.scen-item.open { border-color: var(--cyan-ring); }
+.scen-item.open::before { background: var(--cyan); box-shadow: 0 0 12px 1px var(--cyan-ring); }
+.scen-row {
+  display: flex; align-items: center; gap: 1rem;
+  padding: .85rem 1rem .85rem 1.1rem; cursor: pointer; user-select: none;
+  transition: background .14s ease;
+}
+.scen-row:hover { background: var(--panel-2); }
+.scen-row:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--cyan-ring); }
+.scen-caret { color: var(--muted); font-size: .8rem; flex: 0 0 auto; transition: color .14s ease; }
+.scen-item.open .scen-caret { color: var(--cyan); }
+.scen-name { font-weight: 600; font-size: .98rem; color: var(--ink); font-family: var(--display); flex: 1 1 auto; min-width: 0; }
+.scen-actions { display: flex; gap: .4rem; flex-wrap: wrap; flex: 0 0 auto; }
+.scen-editor-inline { padding: .2rem 1rem 1.1rem 1.1rem; border-top: 1px solid var(--line-soft); }
+.tab-pane:not(.no-anim) .scen-editor-inline { animation: fade .18s ease both; }
 
 /* ============================ Editor ============================ */
 .editor-wrap { margin-bottom: 1.2rem; }

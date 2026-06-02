@@ -324,12 +324,15 @@
     return '<button class="btn small" data-action="add-row" data-list="' + list + '">' + esc(label) + '</button>';
   }
 
-  function renderScenarioEditor(state) {
+  function renderScenarioEditor(state, inline) {
     var s = state.scenarios.filter(function (x) { return x.id === state.editingId; })[0];
     if (!s) return '';
-    return '<div class="editor-wrap">' +
+    // Inline (accordion) mode: the row above already names the scenario and the
+    // row click collapses it, so we drop the "Editing: … / Done" header.
+    var head = inline ? '' :
       '<div class="editor-head"><h3>Editing: ' + esc(s.name) + '</h3>' +
-        '<button class="btn small" data-action="close-editor">Done</button></div>' +
+        '<button class="btn small" data-action="close-editor">Done</button></div>';
+    return '<div class="editor-wrap">' + head +
 
       sectionCard('basics', 'Basics', '',
         '<div class="grid3">' +
@@ -382,22 +385,26 @@
   function renderScenarios(state) {
     var list = state.scenarios.length
       ? '<ul class="scen-list">' + state.scenarios.map(function (s) {
-          var active = s.id === state.editingId ? ' active' : '';
-          return '<li class="' + active.trim() + '"><span class="scen-name">' + esc(s.name) + '</span>' +
-            '<span class="scen-actions">' +
-              '<button class="btn small" data-action="edit-scenario" data-id="' + s.id + '">Edit</button>' +
-              '<button class="btn small" data-action="duplicate-scenario" data-id="' + s.id + '">Duplicate</button>' +
-              '<button class="btn small" data-action="rename-scenario" data-id="' + s.id + '">Rename</button>' +
-              '<button class="btn small danger" data-action="delete-scenario" data-id="' + s.id + '">Delete</button>' +
-            '</span></li>';
+          var open = s.id === state.editingId;
+          return '<li class="scen-item' + (open ? ' open' : '') + '">' +
+            '<div class="scen-row" data-action="toggle-edit" data-id="' + s.id + '" role="button" tabindex="0" aria-expanded="' + open + '">' +
+              '<span class="scen-caret" aria-hidden="true">' + (open ? '▾' : '▸') + '</span>' +
+              '<span class="scen-name">' + esc(s.name) + '</span>' +
+              '<span class="scen-actions">' +
+                '<button class="btn small" data-action="duplicate-scenario" data-id="' + s.id + '">Duplicate</button>' +
+                '<button class="btn small" data-action="rename-scenario" data-id="' + s.id + '">Rename</button>' +
+                '<button class="btn small danger" data-action="delete-scenario" data-id="' + s.id + '">Delete</button>' +
+              '</span>' +
+            '</div>' +
+            (open ? '<div class="scen-editor-inline">' + renderScenarioEditor(state, true) + '</div>' : '') +
+          '</li>';
         }).join('') + '</ul>'
       : '<p class="muted">No scenarios yet — create your first one.</p>';
 
     return '<div class="tab-pane">' +
       '<div class="bar"><button class="btn primary" data-action="add-scenario">+ New scenario</button>' +
-        '<span class="muted small">Tip: build one, then Duplicate it to compare different claiming ages or retirement dates.</span></div>' +
+        '<span class="muted small">Tip: click a scenario to open it. Build one, then Duplicate to compare different claiming ages or retirement dates.</span></div>' +
       list +
-      renderScenarioEditor(state) +
     '</div>';
   }
 

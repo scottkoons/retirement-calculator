@@ -349,6 +349,8 @@
 
     if (t.dataset.scope === 'settings') {
       setByPath(state, t.dataset.path, value);
+      // Toggling a throttle on/off reveals or hides its detail row.
+      if (/returnThrottle\.(preEnabled|atEnabled)$/.test(t.dataset.path)) { persist(); render(); return; }
     } else {
       var s = editingScenario();
       if (!s) return;

@@ -735,6 +735,19 @@ input.grow { flex: 1; min-width: 150px; }
 }
 .chk input { width: 16px; height: 16px; accent-color: var(--cyan); cursor: pointer; padding: 0; }
 
+/* Return throttle (glide-path) rows in Settings */
+.throttle-row {
+  display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;
+  padding: .75rem 0; border-bottom: 1px solid var(--line-soft);
+}
+.throttle-row:last-child { border-bottom: none; }
+.throttle-row .chk.pick { flex: 0 0 auto; }
+.throttle-detail {
+  display: inline-flex; align-items: center; gap: .5rem; flex-wrap: wrap;
+  color: var(--ink-soft); font-size: .9rem; font-weight: 500;
+}
+.throttle-detail input { margin: 0; }
+
 .table-scroll { overflow-x: auto; margin: 0 -.2rem; }
 table.compare { width: 100%; border-collapse: collapse; font-size: .9rem; }
 table.compare th, table.compare td {

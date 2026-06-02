@@ -202,8 +202,15 @@
       var ageA = (absM - birthAbsA) / 12;
       var retired = absM >= retireAbs;
 
-      // 1. investment growth — rate may vary by age via return phases
-      var rate = usePhases ? monthlyRate(returnRateAt(ageA, phases, returnPct)) : mRate;
+      // 1. investment growth — rate may vary by age via return phases, then an
+      // optional glide-path throttle near/at retirement (overrides in its window).
+      var annualR = usePhases ? returnRateAt(ageA, phases, returnPct) : returnPct;
+      var th = settings.returnThrottle;
+      if (th) {
+        if (th.atEnabled && ageA >= retireAge) annualR = num(th.atRate, annualR);
+        else if (th.preEnabled && ageA >= (retireAge - num(th.preYears, 0)) && ageA < retireAge) annualR = num(th.preRate, annualR);
+      }
+      var rate = monthlyRate(annualR);
       var preGrowth = balance;
       balance *= (1 + rate);
       var growthThisMonth = balance - preGrowth;

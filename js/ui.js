@@ -104,6 +104,31 @@
         '<div class="field"><label>Social Security COLA %</label>' + numInput('settings', 'settings.assumptions.ssColaPct', a.ssColaPct, '%', 'pct') + '</div>' +
         '<div class="field"><label>Effective tax rate %</label>' + numInput('settings', 'settings.assumptions.effectiveTaxPct', a.effectiveTaxPct, '%', 'pct') + '</div>' +
       '</div><p class="muted small">Tax applies to Social Security and any income you mark taxable. VA disability is always tax-free.</p></div>' +
+      returnThrottleCard(s.returnThrottle || {}) +
+    '</div>';
+  }
+
+  // Optional glide path: taper the return as retirement nears and at retirement.
+  // Both toggles are off by default and apply to every scenario using its own
+  // retirement age (so the windows shift if you change a scenario's age).
+  function returnThrottleCard(rt) {
+    function tog(path, on, label) {
+      return '<label class="chk pick"><input type="checkbox" ' + attr('settings', path) + (on ? ' checked' : '') + '> ' + label + '</label>';
+    }
+    var pre = rt.preEnabled
+      ? '<span class="throttle-detail">Starting ' +
+          numInput('settings', 'settings.returnThrottle.preYears', rt.preYears == null ? 3 : rt.preYears, 'yrs', 'yr') +
+          ' years before retirement, use ' +
+          numInput('settings', 'settings.returnThrottle.preRate', rt.preRate == null ? 6 : rt.preRate, '%', 'pct') + ' %</span>'
+      : '';
+    var at = rt.atEnabled
+      ? '<span class="throttle-detail">From retirement on, use ' +
+          numInput('settings', 'settings.returnThrottle.atRate', rt.atRate == null ? 5 : rt.atRate, '%', 'pct') + ' %</span>'
+      : '';
+    return '<div class="card"><h3>Return throttle <span class="h3-tag" style="color:var(--cyan);background:var(--cyan-dim);border-color:var(--cyan-dim)">glide path</span></h3>' +
+      '<p class="muted small">Optionally ease your investment return down as retirement approaches, and again at retirement — without setting explicit age phases. Off by default. Applies to every scenario using its own retirement age.</p>' +
+      '<div class="throttle-row">' + tog('settings.returnThrottle.preEnabled', rt.preEnabled, 'Throttle before retirement') + pre + '</div>' +
+      '<div class="throttle-row">' + tog('settings.returnThrottle.atEnabled', rt.atEnabled, 'Throttle at &amp; after retirement') + at + '</div>' +
     '</div>';
   }
 

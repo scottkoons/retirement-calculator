@@ -129,6 +129,14 @@
     if (a >= 1000) return sign + '$' + Math.round(a / 1000) + 'K';
     return sign + '$' + Math.round(a);
   }
+  // Compact money with an M tier for the big headline figures: $3.40M, $258K, $0.
+  function shortMoneyMM(n) {
+    if (n == null || isNaN(n)) return '—';
+    var a = Math.abs(n), sign = n < 0 ? '-' : '';
+    if (a >= 1e6) return sign + '$' + (a / 1e6).toFixed(2) + 'M';
+    if (a >= 1000) return sign + '$' + Math.round(a / 1000) + 'K';
+    return sign + '$' + Math.round(a);
+  }
 
   // Monthly Contributions — a non-overlapping timeline. Columns mirror the
   // reference: Name · Start · End · Monthly $ · Months · Total.
@@ -417,8 +425,8 @@
     return (Math.round(parseFloat(n) * 10) / 10).toString();
   }
 
-  // Shared source of the three headline figures so the static render and the
-  // live slider updates agree. Returns display strings plus the primary id.
+  // Shared source of the headline figures so the static render, the live slider
+  // updates, and the income-breakdown card all agree. Runs the projection once.
   function dashboardStats(state) {
     var s = primaryScenario(state);
     var a = state.settings.assumptions || {};
@@ -427,6 +435,11 @@
     var startRaw = s && s.startingBalance !== '' && s.startingBalance != null
       ? s.startingBalance : state.settings.currentSavings;
     var start = (startRaw === '' || startRaw == null) ? '—' : shortMoney(num(startRaw));
+
+    var proj = s ? global.RetEngine.projectScenario(s, state.settings, { now: state.now }) : null;
+    var bd = s ? global.RetEngine.incomeBreakdown(s, state.settings, { now: state.now }) : null;
+    var nestEgg = proj ? proj.summary.nestEggAtRetirement : null;
+
     return {
       primaryId: s ? s.id : null,
       name: s ? s.name : 'No scenario yet',
@@ -434,7 +447,12 @@
       // raw slider values (fall back to sensible mid-points when blank)
       ageVal: s && s.retireAge !== '' && s.retireAge != null ? num(s.retireAge) : 65,
       retVal: a.returnPct !== '' && a.returnPct != null ? num(a.returnPct) : 6,
-      age: age, ret: ret, start: start
+      age: age, ret: ret, start: start,
+      // projected outcomes (react to the retirement-age slider)
+      balance: bd ? shortMoneyMM(nestEgg) : '—',
+      monthly: bd ? fmtMoney(bd.monthlyIncome) : '—',
+      annual: bd ? shortMoneyMM(bd.annualIncome) : '—',
+      breakdown: bd
     };
   }
 
@@ -442,9 +460,7 @@
   // retirement age, average return, and starting amount. Values are white —
   // no orange on the numbers (including the dollar sign). The first two carry
   // a slider so you can dial them in and watch the chart move.
-  function statHeader(state) {
-    var d = dashboardStats(state);
-
+  function statHeader(d) {
     function card(icon, label, key, valHtml, slider) {
       return '<div class="stat-card">' +
         '<div class="stat-top"><span class="stat-label">' + label + '</span>' +
@@ -475,6 +491,62 @@
       '</div></div>';
   }
 
+  // Second row — the projected OUTCOMES that move with the sliders: balance at
+  // retirement, monthly income, annual income. Each card has its own accent.
+  function resultRow(d) {
+    var ageTxt = d.hasScenario ? d.age : '—';
+    function rcard(color, dot, top, key, val, sub) {
+      return '<div class="result-card" style="--rc:' + color + '">' +
+        '<div class="stat-top"><span class="stat-label">' + dot + top + '</span></div>' +
+        '<div class="stat-value"><span class="stat-num" data-stat-val="' + key + '">' + esc(val) + '</span></div>' +
+        '<div class="rc-sub">' + sub + '</div></div>';
+    }
+    var dot = '<span class="rc-dot"></span>';
+    var ageEcho = '<span data-stat-val="ageEcho">' + esc(ageTxt) + '</span>';
+    return '<div class="result-row">' +
+      rcard('#f59e0b', dot, 'At retirement (' + ageEcho + ')', 'balance', d.balance, 'Projected balance') +
+      rcard('#10b981', dot, 'Monthly income', 'monthly', d.monthly, 'At age ' + ageEcho) +
+      rcard('#ec4899', dot, 'Annual income', 'annual', d.annual, 'At age ' + ageEcho) +
+    '</div>';
+  }
+
+  // Income Breakdown — where the monthly income comes from at retirement, with
+  // a bar per source, Tax / Tax-free badges, and taxable vs tax-free totals.
+  function incomeBreakdownCard(d) {
+    if (!d.hasScenario || !d.breakdown) {
+      return '<div class="card"><h3>Income breakdown</h3>' +
+        '<p class="muted small" style="margin:0">Add a scenario with spending, Social Security, VA, or other income to see where your retirement income comes from.</p></div>';
+    }
+    var bd = d.breakdown;
+    var SRC_COLORS = { withdrawal: '#8b5cf6', va: '#ec4899', ssA: '#10b981', ssB: '#fbbf24', extra: '#0891b2' };
+    var max = bd.sources.reduce(function (m, s) { return Math.max(m, s.amount); }, 0) || 1;
+    var rows = bd.sources.length
+      ? bd.sources.map(function (s) {
+          var color = SRC_COLORS[s.key] || '#0891b2';
+          var pct = Math.max(2, Math.round((s.amount / max) * 100));
+          var badge = s.taxable
+            ? '<span class="tax-badge tax">Tax</span>'
+            : '<span class="tax-badge free">Tax-free</span>';
+          return '<div class="ib-row">' +
+            '<div class="ib-head">' +
+              '<span class="ib-name"><span class="ib-dot" style="background:' + color + '"></span>' + esc(s.label) + ' ' + badge + '</span>' +
+              '<span class="ib-amt mono">' + fmtMoney(s.amount) + '</span>' +
+            '</div>' +
+            '<div class="ib-track"><span class="ib-fill" style="width:' + pct + '%;background:' + color + '"></span></div>' +
+          '</div>';
+        }).join('')
+      : '<p class="muted small" style="margin:0">No income at this age yet — adjust spending, claiming ages, or income streams.</p>';
+
+    return '<div class="card income-card">' +
+      '<h3>Income breakdown <span class="ib-sub">at age ' + esc(String(bd.age)) + ' · ' + esc(d.name) + '</span></h3>' +
+      '<div class="ib-list">' + rows + '</div>' +
+      '<div class="ib-totals">' +
+        '<div class="ib-total taxable"><span class="ib-total-lbl">Taxable / mo</span><span class="ib-total-val mono">' + fmtMoney(bd.taxableMonthly) + '</span></div>' +
+        '<div class="ib-total free"><span class="ib-total-lbl">Tax-free / mo</span><span class="ib-total-val mono">' + fmtMoney(bd.taxfreeMonthly) + '</span></div>' +
+      '</div>' +
+    '</div>';
+  }
+
   // "Control panel" of scenario chips across the top — click to add/remove a
   // scenario from the comparison. Replaces the old checkbox picker and the
   // header search bar.
@@ -495,15 +567,18 @@
   }
 
   function renderDashboard(state) {
+    var d = dashboardStats(state);
     var selected = state.scenarios.filter(function (s) { return state.selectedScenarioIds.indexOf(s.id) >= 0; });
     var table = selected.length ? buildCompareTable(state, selected)
       : '<p class="muted">Pick one or more scenarios above to compare them.</p>';
 
     return '<div class="tab-pane">' +
-      statHeader(state) +
+      statHeader(d) +
+      resultRow(d) +
       '<div class="bar"><p class="intro" style="margin:0">Pick the scenarios to compare side by side.</p>' +
         dollarBasisToggle(state) + '</div>' +
       scenarioBar(state) +
+      incomeBreakdownCard(d) +
       '<div class="card">' + table + '</div>' +
       '<div class="card"><h3>Projected balance over time</h3>' + chartBasisNote(state) +
         '<div class="chart-wrap"><canvas id="balanceChart"></canvas></div></div>' +

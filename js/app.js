@@ -243,8 +243,11 @@
   // the slider keeps the drag).
   function updateStatNumbers() {
     var d = UI.dashboardStats(state);
-    var map = { retireAge: d.age, returnPct: d.ret, start: d.start };
-    document.querySelectorAll('.stat-num[data-stat-val]').forEach(function (el) {
+    var map = {
+      retireAge: d.age, returnPct: d.ret, start: d.start,
+      balance: d.balance, monthly: d.monthly, annual: d.annual, ageEcho: d.age
+    };
+    document.querySelectorAll('[data-stat-val]').forEach(function (el) {
       var k = el.dataset.statVal;
       if (map[k] != null) el.textContent = map[k];
     });

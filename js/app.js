@@ -56,7 +56,6 @@
   /* ------------------------------ rendering ------------------------------ */
   function render() {
     ensureScenarioColors();
-    renderScenarioPills();
     document.querySelectorAll('.tab-btn').forEach(function (b) {
       b.classList.toggle('active', b.dataset.tab === state.activeTab);
     });
@@ -66,21 +65,6 @@
     else main.innerHTML = UI.renderDashboard(state);
 
     if (state.activeTab === 'dashboard') drawChart();
-  }
-
-  // Header pills: one per scenario with its color dot. Click to edit that
-  // scenario (jumps to the Scenarios tab); the active one is highlighted.
-  function renderScenarioPills() {
-    var host = document.getElementById('scenario-pills');
-    if (!host) return;
-    var html = (state.scenarios || []).map(function (s) {
-      var active = (state.activeTab === 'scenarios' && s.id === state.editingId) ? ' active' : '';
-      return '<button class="scenario-pill' + active + '" data-action="pill-edit" data-id="' + s.id + '" title="' + UI.esc(s.name) + '">' +
-        '<span class="pill-dot" style="background:' + (s.color || '#888') + '"></span>' +
-        '<span class="pill-name">' + UI.esc(s.name) + '</span></button>';
-    }).join('');
-    html += '<button class="scenario-pill add" data-action="add-scenario" title="New scenario">+ New</button>';
-    host.innerHTML = html;
   }
 
   function refreshLive() {
@@ -283,7 +267,6 @@
     main.innerHTML = UI.renderScenarios(state);
     var pane = main.querySelector('.tab-pane');
     if (pane) pane.classList.add('no-anim');
-    renderScenarioPills();
     if (path) {
       var again = main.querySelector('[data-path="' + path.replace(/"/g, '\\"') + '"]');
       if (again) { try { again.focus({ preventScroll: true }); } catch (x) { try { again.focus(); } catch (y) {} } }
@@ -305,6 +288,14 @@
       case 'add-scenario': addScenario(); break;
       case 'edit-scenario': state.editingId = id; persist(); render(); break;
       case 'pill-edit': state.activeTab = 'scenarios'; state.editingId = id; persist(); render(); break;
+      case 'chip-select': {
+        // Toggle a scenario in/out of the dashboard comparison.
+        var ix = state.selectedScenarioIds.indexOf(id);
+        if (ix >= 0) state.selectedScenarioIds.splice(ix, 1);
+        else state.selectedScenarioIds.push(id);
+        persist(); render();
+        break;
+      }
       case 'duplicate-scenario': duplicateScenario(id); break;
       case 'delete-scenario': deleteScenario(id); break;
       case 'rename-scenario': renameScenario(id); break;

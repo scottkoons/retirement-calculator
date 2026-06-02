@@ -196,6 +196,7 @@
     var depletionAge = null;
     var nestEggAtRetirement = null;
     var retirementIncomeFirst = null;
+    var yearly = [];   // one snapshot per birthday (clean integer ages)
 
     for (var absM = nowAbs; absM <= endAbs; absM++) {
       var ageA = (absM - birthAbsA) / 12;
@@ -206,10 +207,11 @@
       balance *= (1 + rate);
       balance += lumpAt(absM, scenario.lumpSums); // 2. lump sums (any phase)
 
-      var incomeGross = 0, incomeTaxable = 0, spending = 0;
+      var incomeGross = 0, incomeTaxable = 0, spending = 0, contribThisMonth = 0;
 
       if (!retired) {
-        balance += contributionFor(absM, scenario);
+        contribThisMonth = contributionFor(absM, scenario);
+        balance += contribThisMonth;
       } else {
         var ssA = ssIncome(personA, num(scenario.claimAgeA, retireAge), absM, nowAbs, ssColaPct);
         var ssB = ssIncome(personB, num(scenario.claimAgeB, retireAge), absM, nowAbs, ssColaPct);
@@ -255,6 +257,22 @@
           spendingMonthlyReal: Math.round(spending * realFactor)
         });
       }
+
+      // Birthday snapshot → integer age. Powers the chart's clean x-axis and the
+      // year-by-year table. Monthly income = guaranteed + withdrawal-to-spending.
+      if ((absM - birthAbsA) % 12 === 0) {
+        var rf = Math.pow(1 + inflationPct / 100, -(absM - nowAbs) / 12);
+        var wd = retired ? Math.max(0, spending - incomeGross) : 0;
+        var mi = retired ? Math.max(spending, incomeGross) : 0;
+        yearly.push({
+          age: Math.round(ageA), year: fa.year, retired: retired,
+          balance: Math.round(balance), balanceReal: Math.round(balance * rf),
+          contributionMonthly: Math.round(contribThisMonth),
+          withdrawalMonthly: Math.round(wd),
+          monthlyIncome: Math.round(mi), monthlyIncomeReal: Math.round(mi * rf),
+          annualIncome: Math.round(mi * 12), annualIncomeReal: Math.round(mi * 12 * rf)
+        });
+      }
     }
 
     var balAt90 = null, balAt90Real = null;
@@ -271,6 +289,7 @@
 
     return {
       rows: rows,
+      yearByYear: yearly,
       summary: {
         retireAge: retireAge,
         nestEggAtRetirement: Math.round(nestEgg),

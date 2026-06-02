@@ -452,7 +452,8 @@
       balance: bd ? shortMoneyMM(nestEgg) : '—',
       monthly: bd ? fmtMoney(bd.monthlyIncome) : '—',
       annual: bd ? shortMoneyMM(bd.annualIncome) : '—',
-      breakdown: bd
+      breakdown: bd,
+      yby: proj ? proj.yearByYear : null
     };
   }
 
@@ -566,6 +567,64 @@
     return '<div class="scenario-bar">' + chips + '</div>';
   }
 
+  // Balance chart card with zoom controls + expand-to-fullscreen.
+  function chartCard(state) {
+    var expanded = !!state.chartExpanded;
+    return '<div class="card chart-card' + (expanded ? ' expanded' : '') + '">' +
+      '<div class="chart-head">' +
+        '<div class="chart-title"><h3>Balance over time</h3>' + chartBasisNote(state) + '</div>' +
+        '<div class="chart-tools">' +
+          '<button class="btn small ghost" data-action="reset-zoom">Reset zoom</button>' +
+          '<button class="btn small ghost" data-action="expand-chart">' + (expanded ? '✕ Close' : '⤢ Expand') + '</button>' +
+        '</div>' +
+      '</div>' +
+      '<p class="muted small zoom-hint">Drag across to zoom · scroll to zoom · Ctrl-drag to pan · hover a ◆ for event details</p>' +
+      '<div class="chart-wrap"><canvas id="balanceChart"></canvas></div>' +
+    '</div>';
+  }
+
+  // Collapsible year-by-year table: balance, contribution, withdrawal, and the
+  // monthly / annual income you live on at each age.
+  function yearByYearCard(state, d) {
+    if (!d.hasScenario || !d.yby || !d.yby.length) return '';
+    var collapsed = !!state.yByYCollapsed;
+    var all = !!state.yByYAll;
+    var retireAgeNum = parseInt(d.age, 10);
+    var base = d.yby[0].age;
+    var rowsArr = d.yby.filter(function (r) { return all || r.retired; });
+    var body = rowsArr.map(function (r) {
+      var isRetire = r.age === retireAgeNum;
+      return '<tr class="' + (isRetire ? 'retire-row' : '') + '">' +
+        '<td class="yby-l">' + (r.age - base) + '</td>' +
+        '<td class="yby-l yby-age">' + r.age + (isRetire ? ' <span class="yby-tag">retire</span>' : '') + '</td>' +
+        '<td class="mono">' + shortMoneyMM(r.balance) + '</td>' +
+        '<td class="mono dim">' + (r.contributionMonthly > 0 ? fmtMoney(r.contributionMonthly) : '—') + '</td>' +
+        '<td class="mono dim">' + (r.withdrawalMonthly > 0 ? fmtMoney(r.withdrawalMonthly) : '—') + '</td>' +
+        '<td class="mono yby-inc">' + (r.monthlyIncome > 0 ? fmtMoney(r.monthlyIncome) : '—') + '</td>' +
+        '<td class="mono yby-inc">' + (r.annualIncome > 0 ? shortMoneyMM(r.annualIncome) : '—') + '</td>' +
+      '</tr>';
+    }).join('');
+
+    return '<div class="card yby-card">' +
+      '<div class="yby-head">' +
+        '<button class="yby-toggle" data-action="toggle-yby">' +
+          '<span class="yby-chevron">' + (collapsed ? '▸' : '▾') + '</span> Year by year — ' + esc(d.name) +
+        '</button>' +
+        (collapsed ? '' :
+          '<div class="seg-toggle">' +
+            '<button class="seg-btn' + (!all ? ' active' : '') + '" data-action="set-yby-mode" data-mode="retire">Retirement only</button>' +
+            '<button class="seg-btn' + (all ? ' active' : '') + '" data-action="set-yby-mode" data-mode="all">All years</button>' +
+          '</div>') +
+      '</div>' +
+      (collapsed ? '' :
+        '<div class="table-scroll yby-scroll"><table class="yby-table"><thead><tr>' +
+          '<th class="yby-l">Year</th><th class="yby-l">Age</th><th>Balance</th><th>Contribution</th>' +
+          '<th>Withdrawal</th><th>Monthly income</th><th>Annual income</th>' +
+        '</tr></thead><tbody>' + body + '</tbody></table>' +
+        '<p class="muted small" style="margin:.6rem .2rem 0">Actual future dollars. Income = guaranteed sources + the withdrawal needed to meet spending.</p></div>') +
+    '</div>';
+  }
+
   function renderDashboard(state) {
     var d = dashboardStats(state);
     var selected = state.scenarios.filter(function (s) { return state.selectedScenarioIds.indexOf(s.id) >= 0; });
@@ -579,9 +638,9 @@
         dollarBasisToggle(state) + '</div>' +
       scenarioBar(state) +
       incomeBreakdownCard(d) +
+      chartCard(state) +
+      yearByYearCard(state, d) +
       '<div class="card">' + table + '</div>' +
-      '<div class="card"><h3>Projected balance over time</h3>' + chartBasisNote(state) +
-        '<div class="chart-wrap"><canvas id="balanceChart"></canvas></div></div>' +
     '</div>';
   }
 

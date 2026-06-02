@@ -706,6 +706,57 @@ table.compare td:not(.metric-name) {
   border-radius: var(--radius); line-height: 1.5; font-family: var(--mono);
 }
 
+/* Chart card: header, zoom controls, expand-to-fullscreen */
+.chart-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
+.chart-title h3 { margin: 0; }
+.chart-tools { display: flex; gap: .4rem; flex: 0 0 auto; }
+.zoom-hint { margin: .35rem 0 .9rem; }
+.chart-card.expanded {
+  position: fixed; inset: 0; z-index: 120; margin: 0; border-radius: 0;
+  overflow: hidden; background: var(--panel);
+}
+.chart-card.expanded .chart-wrap { height: calc(100vh - 150px); }
+
+/* Year-by-year */
+.yby-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; flex-wrap: wrap; }
+.yby-toggle {
+  background: none; border: none; cursor: pointer; color: var(--ink); padding: 0;
+  font-family: var(--display); font-size: 1.05rem; font-weight: 700;
+  display: inline-flex; align-items: center; gap: .55rem;
+}
+.yby-chevron { color: var(--cyan); font-size: .8rem; }
+.yby-scroll { max-height: 440px; overflow: auto; }
+table.yby-table { width: 100%; border-collapse: collapse; font-size: .88rem; }
+.yby-table th, .yby-table td { padding: .6rem .9rem; text-align: right; border-bottom: 1px solid var(--line-soft); white-space: nowrap; }
+.yby-table th {
+  position: sticky; top: 0; background: var(--bg-2); z-index: 1;
+  font-family: var(--mono); font-size: .62rem; font-weight: 600;
+  text-transform: uppercase; letter-spacing: .08em; color: var(--muted);
+  border-bottom: 1px solid var(--line);
+}
+.yby-table td.yby-l, .yby-table th.yby-l { text-align: left; }
+.yby-table td.mono { font-family: var(--mono); font-variant-numeric: tabular-nums; color: var(--ink); font-weight: 600; }
+.yby-table td.dim { color: var(--ink-soft); font-weight: 500; }
+.yby-table td.yby-inc { color: var(--green); }
+.yby-table td.yby-age { color: var(--ink-soft); }
+.yby-table tbody tr:hover td { background: var(--panel-2); }
+.yby-table tr.retire-row td { background: var(--cyan-dim); }
+.yby-table tr.retire-row td.yby-age { color: var(--ink); font-weight: 700; }
+.yby-tag {
+  font-family: var(--mono); font-size: .56rem; font-weight: 700; color: var(--cyan);
+  text-transform: uppercase; letter-spacing: .06em; margin-left: .4rem;
+}
+
+/* Segmented toggle (retirement only / all years) */
+.seg-toggle { display: inline-flex; gap: .2rem; background: var(--bg-2); border: 1px solid var(--line); padding: .22rem; border-radius: var(--radius); }
+.seg-btn {
+  border: none; background: transparent; cursor: pointer; padding: .4rem .8rem;
+  border-radius: var(--radius-sm); font-size: .76rem; font-weight: 600;
+  color: var(--muted); font-family: var(--sans); transition: color .14s ease, background .14s ease;
+}
+.seg-btn:hover { color: var(--ink); }
+.seg-btn.active { color: var(--accent-ink); background: var(--cyan); }
+
 /* ============================ Misc ============================ */
 .muted { color: var(--muted); }
 .small { font-size: .82rem; }

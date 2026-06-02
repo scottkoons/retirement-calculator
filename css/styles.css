@@ -533,8 +533,83 @@ input.grow { flex: 1; min-width: 150px; }
   font-size: 2.6rem; line-height: 1; letter-spacing: -.02em;
   font-variant-numeric: tabular-nums; display: flex; align-items: baseline; gap: .4rem;
 }
+.stat-num { display: inline-block; }
 .stat-unit { font-size: 1rem; font-weight: 600; color: var(--ink-soft); letter-spacing: 0; }
+
+/* Headline slider — dial a value and watch the chart move */
+.stat-slider {
+  -webkit-appearance: none; appearance: none;
+  width: 100%; height: 6px; margin: 1.15rem 0 .1rem; padding: 0;
+  background: var(--panel-2); border: 1px solid var(--line);
+  border-radius: 999px; cursor: pointer; outline: none;
+}
+.stat-slider::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 18px; height: 18px; border-radius: 50%;
+  background: var(--cyan); border: 2px solid var(--bg);
+  box-shadow: 0 0 0 1px var(--cyan-ring), 0 0 12px -2px var(--cyan-ring);
+  cursor: pointer; transition: transform .08s ease;
+}
+.stat-slider::-moz-range-thumb {
+  width: 18px; height: 18px; border-radius: 50%;
+  background: var(--cyan); border: 2px solid var(--bg);
+  box-shadow: 0 0 0 1px var(--cyan-ring); cursor: pointer;
+}
+.stat-slider:active::-webkit-slider-thumb { transform: scale(1.12); }
+.stat-slider:focus-visible { box-shadow: 0 0 0 3px var(--cyan-ring); }
 @media (max-width: 820px) { .stat-row { grid-template-columns: 1fr; } }
+
+/* Outcome cards — projected balance / monthly / annual income */
+.result-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.1rem; margin-bottom: 1.7rem; }
+.result-card {
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 1.2rem 1.4rem 1.3rem;
+  box-shadow: var(--shadow-card); position: relative; overflow: hidden;
+}
+.result-card::after {
+  content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 3px;
+  background: linear-gradient(90deg, var(--rc), transparent); opacity: .85;
+}
+.result-card .stat-label { display: inline-flex; align-items: center; gap: .5rem; }
+.rc-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--rc); flex: 0 0 auto; }
+.result-card .stat-value { font-size: 2.2rem; margin-top: .9rem; }
+.rc-sub { margin-top: .55rem; font-size: .8rem; font-weight: 600; color: var(--rc); }
+
+/* Income breakdown */
+.income-card h3 { margin-bottom: 1.25rem; }
+.ib-sub {
+  font-family: var(--sans); text-transform: none; letter-spacing: 0;
+  color: var(--muted); font-weight: 500; font-size: .8rem; margin-left: .15rem;
+}
+.ib-list { display: grid; gap: 1.05rem; }
+.ib-row { display: grid; gap: .5rem; }
+.ib-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.ib-name { display: inline-flex; align-items: center; gap: .55rem; font-weight: 600; color: var(--ink); font-size: .92rem; }
+.ib-dot { width: 10px; height: 10px; border-radius: 50%; flex: 0 0 auto; }
+.ib-amt { color: var(--ink); font-weight: 700; font-variant-numeric: tabular-nums; }
+.ib-track { height: 8px; border-radius: 999px; background: var(--panel-2); overflow: hidden; }
+.ib-fill { display: block; height: 100%; border-radius: 999px; }
+
+.tax-badge {
+  font-family: var(--mono); font-size: .6rem; font-weight: 600; letter-spacing: .04em;
+  padding: .12rem .42rem; border-radius: 4px; text-transform: none;
+}
+.tax-badge.tax { color: var(--amber); background: rgba(251,191,36,.14); border: 1px solid rgba(251,191,36,.28); }
+.tax-badge.free { color: var(--green); background: var(--green-dim); border: 1px solid var(--green-dim); }
+
+.ib-totals { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 1.5rem; }
+.ib-total {
+  border: 1px solid var(--line); border-radius: var(--radius);
+  padding: .85rem 1rem; display: flex; flex-direction: column; gap: .3rem;
+}
+.ib-total.taxable { border-color: rgba(251,191,36,.3); background: rgba(251,191,36,.06); }
+.ib-total.free { border-color: var(--green-dim); background: var(--green-dim); }
+.ib-total-lbl { font-family: var(--mono); font-size: .64rem; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; }
+.ib-total.taxable .ib-total-lbl { color: var(--amber); }
+.ib-total.free .ib-total-lbl { color: var(--green); }
+.ib-total-val { font-size: 1.5rem; font-weight: 700; color: var(--ink); font-variant-numeric: tabular-nums; }
+@media (max-width: 820px) { .result-row { grid-template-columns: 1fr; } }
+@media (max-width: 560px) { .ib-totals { grid-template-columns: 1fr; } }
 
 /* Scenario "control panel" chips — click to add/remove from the comparison */
 .scenario-bar {
@@ -544,19 +619,36 @@ input.grow { flex: 1; min-width: 150px; }
 }
 .scenario-bar.empty { gap: 1rem; }
 .scn-chip {
-  display: inline-flex; align-items: center; gap: .5rem;
+  display: inline-flex; align-items: center; gap: .1rem;
   border: 1px solid var(--line); background: var(--panel-2); color: var(--ink-soft);
-  padding: .42rem .85rem; border-radius: 999px; cursor: pointer;
-  font: inherit; font-size: .84rem; font-weight: 600; white-space: nowrap; max-width: 220px;
-  transition: border-color .14s ease, background .14s ease, color .14s ease, box-shadow .14s ease;
+  padding: .1rem .2rem .1rem .15rem; border-radius: 999px; cursor: grab;
+  font: inherit; font-size: .84rem; font-weight: 600; white-space: nowrap; max-width: 250px;
+  transition: border-color .14s ease, background .14s ease, color .14s ease, box-shadow .14s ease, opacity .12s ease;
 }
 .scn-chip:hover { border-color: var(--line-strong); color: var(--ink); }
 .scn-chip.on {
   border-color: var(--cyan); background: var(--cyan-dim); color: var(--ink);
   box-shadow: 0 0 14px -6px var(--cyan-ring);
 }
-.scn-chip .pill-name { overflow: hidden; text-overflow: ellipsis; }
-.scn-chip.add { color: var(--muted); border-style: dashed; background: transparent; }
+.scn-chip.dragging { opacity: .4; cursor: grabbing; }
+.scn-chip.drop-target { border-color: var(--cyan); box-shadow: inset 0 0 0 1px var(--cyan); }
+.pill-name { overflow: hidden; text-overflow: ellipsis; }
+.scn-pick {
+  display: inline-flex; align-items: center; gap: .5rem;
+  border: none; background: transparent; color: inherit; cursor: pointer;
+  font: inherit; padding: .32rem .55rem; border-radius: 999px; max-width: 195px;
+}
+.scn-copy {
+  border: none; background: transparent; color: var(--muted); cursor: pointer;
+  font-size: .9rem; line-height: 1; width: 24px; height: 24px; border-radius: 999px;
+  display: inline-grid; place-items: center; flex: 0 0 auto;
+  transition: color .12s ease, background .12s ease;
+}
+.scn-copy:hover { color: var(--cyan); background: var(--cyan-dim); }
+.scn-chip.add {
+  display: inline-flex; align-items: center; gap: .4rem; cursor: pointer;
+  color: var(--muted); border-style: dashed; background: transparent; padding: .42rem .85rem;
+}
 .scn-chip.add:hover { color: var(--cyan); border-color: var(--cyan); }
 
 /* Dollar-basis toggle (actual future $ vs today's $) */
@@ -630,6 +722,57 @@ table.compare td:not(.metric-name) {
   background: var(--bg-2); border: 1px dashed var(--line);
   border-radius: var(--radius); line-height: 1.5; font-family: var(--mono);
 }
+
+/* Chart card: header, zoom controls, expand-to-fullscreen */
+.chart-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
+.chart-title h3 { margin: 0; }
+.chart-tools { display: flex; gap: .4rem; flex: 0 0 auto; }
+.zoom-hint { margin: .35rem 0 .9rem; }
+.chart-card.expanded {
+  position: fixed; inset: 0; z-index: 120; margin: 0; border-radius: 0;
+  overflow: hidden; background: var(--panel);
+}
+.chart-card.expanded .chart-wrap { height: calc(100vh - 150px); }
+
+/* Year-by-year */
+.yby-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; flex-wrap: wrap; }
+.yby-toggle {
+  background: none; border: none; cursor: pointer; color: var(--ink); padding: 0;
+  font-family: var(--display); font-size: 1.05rem; font-weight: 700;
+  display: inline-flex; align-items: center; gap: .55rem;
+}
+.yby-chevron { color: var(--cyan); font-size: .8rem; }
+.yby-scroll { max-height: 440px; overflow: auto; }
+table.yby-table { width: 100%; border-collapse: collapse; font-size: .88rem; }
+.yby-table th, .yby-table td { padding: .6rem .9rem; text-align: right; border-bottom: 1px solid var(--line-soft); white-space: nowrap; }
+.yby-table th {
+  position: sticky; top: 0; background: var(--bg-2); z-index: 1;
+  font-family: var(--mono); font-size: .62rem; font-weight: 600;
+  text-transform: uppercase; letter-spacing: .08em; color: var(--muted);
+  border-bottom: 1px solid var(--line);
+}
+.yby-table td.yby-l, .yby-table th.yby-l { text-align: left; }
+.yby-table td.mono { font-family: var(--mono); font-variant-numeric: tabular-nums; color: var(--ink); font-weight: 600; }
+.yby-table td.dim { color: var(--ink-soft); font-weight: 500; }
+.yby-table td.yby-inc { color: var(--green); }
+.yby-table td.yby-age { color: var(--ink-soft); }
+.yby-table tbody tr:hover td { background: var(--panel-2); }
+.yby-table tr.retire-row td { background: var(--cyan-dim); }
+.yby-table tr.retire-row td.yby-age { color: var(--ink); font-weight: 700; }
+.yby-tag {
+  font-family: var(--mono); font-size: .56rem; font-weight: 700; color: var(--cyan);
+  text-transform: uppercase; letter-spacing: .06em; margin-left: .4rem;
+}
+
+/* Segmented toggle (retirement only / all years) */
+.seg-toggle { display: inline-flex; gap: .2rem; background: var(--bg-2); border: 1px solid var(--line); padding: .22rem; border-radius: var(--radius); }
+.seg-btn {
+  border: none; background: transparent; cursor: pointer; padding: .4rem .8rem;
+  border-radius: var(--radius-sm); font-size: .76rem; font-weight: 600;
+  color: var(--muted); font-family: var(--sans); transition: color .14s ease, background .14s ease;
+}
+.seg-btn:hover { color: var(--ink); }
+.seg-btn.active { color: var(--accent-ink); background: var(--cyan); }
 
 /* ============================ Misc ============================ */
 .muted { color: var(--muted); }

@@ -196,6 +196,7 @@
     var depletionAge = null;
     var nestEggAtRetirement = null;
     var retirementIncomeFirst = null;
+    var yearly = [];   // one snapshot per birthday (clean integer ages)
 
     for (var absM = nowAbs; absM <= endAbs; absM++) {
       var ageA = (absM - birthAbsA) / 12;
@@ -206,10 +207,11 @@
       balance *= (1 + rate);
       balance += lumpAt(absM, scenario.lumpSums); // 2. lump sums (any phase)
 
-      var incomeGross = 0, incomeTaxable = 0, spending = 0;
+      var incomeGross = 0, incomeTaxable = 0, spending = 0, contribThisMonth = 0;
 
       if (!retired) {
-        balance += contributionFor(absM, scenario);
+        contribThisMonth = contributionFor(absM, scenario);
+        balance += contribThisMonth;
       } else {
         var ssA = ssIncome(personA, num(scenario.claimAgeA, retireAge), absM, nowAbs, ssColaPct);
         var ssB = ssIncome(personB, num(scenario.claimAgeB, retireAge), absM, nowAbs, ssColaPct);
@@ -255,6 +257,22 @@
           spendingMonthlyReal: Math.round(spending * realFactor)
         });
       }
+
+      // Birthday snapshot → integer age. Powers the chart's clean x-axis and the
+      // year-by-year table. Monthly income = guaranteed + withdrawal-to-spending.
+      if ((absM - birthAbsA) % 12 === 0) {
+        var rf = Math.pow(1 + inflationPct / 100, -(absM - nowAbs) / 12);
+        var wd = retired ? Math.max(0, spending - incomeGross) : 0;
+        var mi = retired ? Math.max(spending, incomeGross) : 0;
+        yearly.push({
+          age: Math.round(ageA), year: fa.year, retired: retired,
+          balance: Math.round(balance), balanceReal: Math.round(balance * rf),
+          contributionMonthly: Math.round(contribThisMonth),
+          withdrawalMonthly: Math.round(wd),
+          monthlyIncome: Math.round(mi), monthlyIncomeReal: Math.round(mi * rf),
+          annualIncome: Math.round(mi * 12), annualIncomeReal: Math.round(mi * 12 * rf)
+        });
+      }
     }
 
     var balAt90 = null, balAt90Real = null;
@@ -271,6 +289,7 @@
 
     return {
       rows: rows,
+      yearByYear: yearly,
       summary: {
         retireAge: retireAge,
         nestEggAtRetirement: Math.round(nestEgg),
@@ -286,8 +305,70 @@
     };
   }
 
+  // Monthly income breakdown at the retirement month (or now, if already past
+  // retirement): every guaranteed source plus the portfolio withdrawal needed
+  // to meet the spending target. All figures are nominal (future) dollars at
+  // that month. "Monthly income" = guaranteed income + withdrawal-to-spending,
+  // i.e. max(spending, guaranteed). Withdrawals count as taxable for the
+  // taxable/tax-free split; VA is tax-free; SS is taxable.
+  function incomeBreakdown(scenario, settings, opts) {
+    opts = opts || {};
+    settings = settings || {};
+    var now = opts.now || { month: 5, year: 2026 };
+    var nowAbs = toAbs(now.month, now.year);
+    var a = settings.assumptions || {};
+    var inflationPct = num(a.inflationPct, 3);
+    var ssColaPct = num(a.ssColaPct, inflationPct);
+
+    var personA = settings.personA || {};
+    var personB = settings.personB || {};
+    var birthAbsA = toAbs(num(personA.birthMonth, 1), num(personA.birthYear, now.year));
+    var retireAge = num(scenario.retireAge, 65);
+    var atAbs = birthAbsA + retireAge * 12;
+    if (atAbs < nowAbs) atAbs = nowAbs;       // already retired → measure at now
+    var months = atAbs - nowAbs;
+    var va = settings.vaDisability || {};
+
+    var sources = [], guaranteed = 0;
+
+    (scenario.extraIncome || []).forEach(function (e) {
+      if (!has(e.startYear)) return;
+      var sAbs = toAbs(num(e.startMonth, now.month), num(e.startYear));
+      var eAbs = has(e.endYear) ? toAbs(num(e.endMonth, 12), num(e.endYear)) : Infinity;
+      if (atAbs >= sAbs && atAbs <= eAbs) {
+        var amt = inflate(num(e.monthly), num(e.colaPct, 0), months);
+        if (amt > 0) { sources.push({ key: 'extra', label: e.label || 'Other income', amount: amt, taxable: !!e.taxable }); guaranteed += amt; }
+      }
+    });
+    var ssA = ssIncome(personA, num(scenario.claimAgeA, retireAge), atAbs, nowAbs, ssColaPct);
+    var ssB = ssIncome(personB, num(scenario.claimAgeB, retireAge), atAbs, nowAbs, ssColaPct);
+    var vaInc = has(va.monthly) ? inflate(num(va.monthly), ssColaPct, months) : 0;
+    if (ssA > 0) { sources.push({ key: 'ssA', label: 'Social Security' + (personA.name ? ' (' + personA.name + ')' : ' (You)'), amount: ssA, taxable: true }); guaranteed += ssA; }
+    if (ssB > 0) { sources.push({ key: 'ssB', label: 'Social Security' + (personB.name ? ' (' + personB.name + ')' : ' (Spouse)'), amount: ssB, taxable: true }); guaranteed += ssB; }
+    if (vaInc > 0) { sources.push({ key: 'va', label: 'VA Benefits', amount: vaInc, taxable: false }); guaranteed += vaInc; }
+
+    var spending = inflate(num(scenario.retirementSpending), inflationPct, months);
+    var withdrawal = Math.max(0, spending - guaranteed);
+    if (withdrawal > 0) sources.push({ key: 'withdrawal', label: 'Investment withdrawal', amount: withdrawal, taxable: true });
+
+    sources.sort(function (x, y) { return y.amount - x.amount; });
+    var monthlyIncome = guaranteed + withdrawal;
+    var taxable = 0, taxfree = 0;
+    sources.forEach(function (s) { if (s.taxable) taxable += s.amount; else taxfree += s.amount; });
+
+    return {
+      age: retireAge,
+      sources: sources.map(function (s) { return { key: s.key, label: s.label, amount: Math.round(s.amount), taxable: s.taxable }; }),
+      monthlyIncome: Math.round(monthlyIncome),
+      annualIncome: Math.round(monthlyIncome * 12),
+      taxableMonthly: Math.round(taxable),
+      taxfreeMonthly: Math.round(taxfree)
+    };
+  }
+
   var api = {
     projectScenario: projectScenario,
+    incomeBreakdown: incomeBreakdown,
     clampContributionPeriods: clampContributionPeriods,
     contributionStats: contributionStats,
     clampReturnPhases: clampReturnPhases,

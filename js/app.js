@@ -11,8 +11,9 @@
   var chart = null;
   // Dashboard accent palette — distinct lines that read on either theme.
   var CHART_COLORS = ['#14b8a6', '#f59e0b', '#6366f1', '#ec4899', '#0891b2', '#84cc16', '#ef4444'];
-  // Stable per-scenario accent colors (used for header pills and the chart).
-  var SCENARIO_COLORS = ['#8b5cf6', '#ec4899', '#14b8a6', '#f59e0b', '#3b82f6', '#84cc16', '#ef4444', '#06b6d4'];
+  // Stable per-scenario accent colors (chart lines + chips). Orange leads so a
+  // single-scenario chart matches the dashboard's accent.
+  var SCENARIO_COLORS = ['#f97316', '#8b5cf6', '#ec4899', '#14b8a6', '#3b82f6', '#84cc16', '#ef4444', '#06b6d4'];
   function ensureScenarioColors() {
     (state.scenarios || []).forEach(function (s, i) {
       if (!s.color) s.color = SCENARIO_COLORS[i % SCENARIO_COLORS.length];
@@ -25,6 +26,14 @@
   }
 
   function genId() { return 'sc_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 7); }
+
+  // "#rrggbb" -> "rgba(r,g,b,a)" for chart gradients.
+  function hexToRgba(hex, a) {
+    var h = String(hex).replace('#', '');
+    if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+    var n = parseInt(h, 16);
+    return 'rgba(' + ((n >> 16) & 255) + ',' + ((n >> 8) & 255) + ',' + (n & 255) + ',' + a + ')';
+  }
 
   function setByPath(obj, path, value) {
     var parts = path.split('.');
@@ -98,24 +107,69 @@
     if (chart) { chart.destroy(); chart = null; }
     if (!selected.length) return;
 
-    // Align on a shared set of years using each scenario's age axis.
+    // Soft top-down gradient under each line, fading to transparent — the
+    // "shaded area" look. Lighter when comparing several so they don't muddy.
+    var topAlpha = selected.length > 1 ? 0.16 : 0.4;
+    function areaFill(color) {
+      return function (ctx) {
+        var c = ctx.chart, area = c.chartArea;
+        if (!area) return hexToRgba(color, topAlpha * 0.5);
+        var g = c.ctx.createLinearGradient(0, area.top, 0, area.bottom);
+        g.addColorStop(0, hexToRgba(color, topAlpha));
+        g.addColorStop(1, hexToRgba(color, 0));
+        return g;
+      };
+    }
+
+    // One point per integer age (birthday snapshots) — a clean x-axis.
     var real = state.dollarBasis === 'real';
     var yKey = real ? 'balanceReal' : 'balance';
+    var projById = {};
     var datasets = selected.map(function (s, i) {
       var r = global.RetEngine.projectScenario(s, state.settings, { now: state.now });
+      projById[s.id] = r;
       var color = s.color || CHART_COLORS[i % CHART_COLORS.length];
       return {
         label: s.name,
-        data: r.rows.map(function (row) { return { x: row.age, y: row[yKey] }; }),
-        borderColor: color, backgroundColor: color, pointBackgroundColor: color,
-        tension: 0.25, pointRadius: 0, pointHoverRadius: 4, borderWidth: 2
+        data: r.yearByYear.map(function (row) { return { x: row.age, y: row[yKey] }; }),
+        borderColor: color, pointBackgroundColor: color,
+        backgroundColor: areaFill(color), fill: 'origin',
+        tension: 0.3, pointRadius: 0, pointHoverRadius: 4, borderWidth: 2.5, order: 2
       };
     });
+
+    // Lump-sum event markers — only when one scenario is selected, to stay
+    // readable. Dots sit on the line at the event's age; details show on hover.
+    if (selected.length === 1) {
+      var yb = projById[selected[0].id].yearByYear;
+      var pa = state.settings.personA || {};
+      var birthAbs = pa.birthYear ? pa.birthYear * 12 + ((pa.birthMonth || 1) - 1) : null;
+      function balAtAge(age) {
+        var best = null, bd = Infinity;
+        yb.forEach(function (row) { var dd = Math.abs(row.age - age); if (dd < bd) { bd = dd; best = row; } });
+        return best ? best[yKey] : 0;
+      }
+      var evPoints = (selected[0].lumpSums || []).filter(function (l) {
+        return l.year != null && l.year !== '' && (parseFloat(l.amount) || 0) !== 0 && birthAbs != null;
+      }).map(function (l) {
+        var age = ((+l.year) * 12 + ((+l.month || 1) - 1) - birthAbs) / 12;
+        return { x: Math.round(age * 10) / 10, y: balAtAge(Math.round(age)), label: l.label || 'Lump sum', amount: +l.amount };
+      });
+      if (evPoints.length) {
+        datasets.push({
+          type: 'scatter', label: '__events__', data: evPoints, showLine: false,
+          pointStyle: 'circle', radius: 5, hoverRadius: 7,
+          backgroundColor: themeVar('--amber', '#fbbf24'),
+          borderColor: themeVar('--panel', '#0d1219'), borderWidth: 2, order: 0
+        });
+      }
+    }
 
     var INK = themeVar('--muted', '#aab6c8');
     var GRID = themeVar('--line', '#20293a');
     var PANEL = themeVar('--panel', '#0d1219');
     var TITLE = themeVar('--ink', '#e6edf6');
+    var ACCENT = themeVar('--cyan', '#f97316');
     chart = new Chart(canvas.getContext('2d'), {
       type: 'line',
       data: { datasets: datasets },
@@ -133,11 +187,30 @@
                grid: { color: GRID, drawTicks: false }, border: { color: GRID } }
         },
         plugins: {
-          legend: { position: 'bottom', labels: { color: INK, usePointStyle: true, pointStyle: 'line', boxWidth: 24, padding: 16 } },
+          legend: { position: 'bottom', labels: { color: INK, usePointStyle: true, pointStyle: 'line', boxWidth: 24, padding: 16,
+            filter: function (item) { return item.text !== '__events__'; } } },
           tooltip: {
-            backgroundColor: PANEL, borderColor: themeVar('--cyan', '#2dd4bf'), borderWidth: 1,
+            backgroundColor: PANEL, borderColor: ACCENT, borderWidth: 1,
             titleColor: TITLE, bodyColor: INK, padding: 10, cornerRadius: 6,
-            callbacks: { label: function (c) { return c.dataset.label + ': ' + UI.fmtMoney(c.parsed.y) + ' (age ' + Math.round(c.parsed.x) + ')'; } }
+            callbacks: {
+              label: function (c) {
+                if (c.dataset.label === '__events__') {
+                  var p = c.raw;
+                  return '◆ ' + (p.label || 'Event') + ': ' + UI.fmtMoney(p.amount) + ' (age ' + Math.round(p.x) + ')';
+                }
+                return c.dataset.label + ': ' + UI.fmtMoney(c.parsed.y) + ' (age ' + Math.round(c.parsed.x) + ')';
+              }
+            }
+          },
+          // Enabled only when chartjs-plugin-zoom is loaded; ignored otherwise.
+          zoom: {
+            pan: { enabled: true, mode: 'x', modifierKey: 'ctrl' },
+            zoom: {
+              wheel: { enabled: true, speed: 0.08 },
+              drag: { enabled: true, backgroundColor: hexToRgba('#f97316', 0.15), borderColor: hexToRgba('#f97316', 0.6), borderWidth: 1 },
+              mode: 'x'
+            },
+            limits: { x: { minRange: 3 } }
           }
         }
       }
@@ -197,8 +270,41 @@
   }
 
   /* ------------------------------- events -------------------------------- */
+  // Dashboard headline sliders (retirement age / average return). While
+  // dragging we update the big number + redraw the chart in place; on release
+  // ('change') we re-render so the comparison table picks up the new values.
+  function onStatSlider(e) {
+    var t = e.target;
+    var val = t.value;
+    if (t.dataset.stat === 'returnPct') {
+      setByPath(state, 'settings.assumptions.returnPct', val);
+    } else if (t.dataset.stat === 'retireAge') {
+      var sc = state.scenarios.filter(function (x) { return x.id === t.dataset.id; })[0];
+      if (sc) sc.retireAge = val;
+    }
+    persist();
+    if (e.type === 'change') { render(); return; }
+    updateStatNumbers();
+    if (state.activeTab === 'dashboard') drawChart();
+  }
+
+  // Refresh just the three big numbers from current state (no DOM rebuild, so
+  // the slider keeps the drag).
+  function updateStatNumbers() {
+    var d = UI.dashboardStats(state);
+    var map = {
+      retireAge: d.age, returnPct: d.ret, start: d.start,
+      balance: d.balance, monthly: d.monthly, annual: d.annual, ageEcho: d.age
+    };
+    document.querySelectorAll('[data-stat-val]').forEach(function (el) {
+      var k = el.dataset.statVal;
+      if (map[k] != null) el.textContent = map[k];
+    });
+  }
+
   function onFieldChange(e) {
     var t = e.target;
+    if (t.dataset && t.dataset.stat) { onStatSlider(e); return; }
     if (!t.dataset || !t.dataset.path) return;
     var value = t.type === 'checkbox' ? t.checked : t.value;
 
@@ -311,6 +417,10 @@
         break;
       }
       case 'set-basis': state.dollarBasis = btn.dataset.basis; persist(); render(); break;
+      case 'reset-zoom': if (chart && chart.resetZoom) chart.resetZoom(); break;
+      case 'expand-chart': state.chartExpanded = !state.chartExpanded; render(); break;
+      case 'toggle-yby': state.yByYCollapsed = !state.yByYCollapsed; persist(); render(); break;
+      case 'set-yby-mode': state.yByYAll = (btn.dataset.mode === 'all'); persist(); render(); break;
       case 'sort': sortList(btn.dataset.sortList, btn.dataset.sortKey); break;
       case 'toggle-theme': toggleTheme(); break;
       case 'backup-download': S.exportFile(stripState()); break;
@@ -419,18 +529,34 @@
     persist(); render();
   }
 
-  // HTML5 drag-and-drop reordering for Lump Sums and Extra Income rows.
+  // HTML5 drag-and-drop reordering for scenario chips and for table rows.
   var dragCtx = null;
   function onDragStart(e) {
+    var chip = e.target.closest('.scn-chip[draggable="true"]');
+    if (chip) {
+      dragCtx = { kind: 'chip', from: +chip.dataset.index };
+      chip.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+      try { e.dataTransfer.setData('text/plain', String(dragCtx.from)); } catch (x) {}
+      return;
+    }
     var row = e.target.closest('.trow[draggable="true"]');
     if (!row) return;
-    dragCtx = { list: row.dataset.list, from: +row.dataset.index };
+    dragCtx = { kind: 'row', list: row.dataset.list, from: +row.dataset.index };
     row.classList.add('dragging');
     e.dataTransfer.effectAllowed = 'move';
     try { e.dataTransfer.setData('text/plain', String(dragCtx.from)); } catch (x) {}
   }
   function onDragOver(e) {
     if (!dragCtx) return;
+    if (dragCtx.kind === 'chip') {
+      var chip = e.target.closest('.scn-chip[draggable="true"]');
+      if (!chip) return;
+      e.preventDefault();
+      document.querySelectorAll('.scn-chip.drop-target').forEach(function (c) { c.classList.remove('drop-target'); });
+      chip.classList.add('drop-target');
+      return;
+    }
     var row = e.target.closest('.trow[draggable="true"]');
     if (!row || row.dataset.list !== dragCtx.list) return;
     e.preventDefault();
@@ -439,6 +565,11 @@
   }
   function onDrop(e) {
     if (!dragCtx) return;
+    if (dragCtx.kind === 'chip') {
+      var chip = e.target.closest('.scn-chip[draggable="true"]');
+      if (chip) { e.preventDefault(); moveScenario(dragCtx.from, +chip.dataset.index); }
+      cleanupDrag(); return;
+    }
     var row = e.target.closest('.trow[draggable="true"]');
     if (!row || row.dataset.list !== dragCtx.list) { cleanupDrag(); return; }
     e.preventDefault();
@@ -449,6 +580,13 @@
   function cleanupDrag() {
     document.querySelectorAll('.dragging, .drop-target').forEach(function (r) { r.classList.remove('dragging', 'drop-target'); });
     dragCtx = null;
+  }
+  function moveScenario(from, to) {
+    var arr = state.scenarios;
+    if (from === to || from == null || from < 0 || to < 0 || from >= arr.length || to >= arr.length) return;
+    var item = arr.splice(from, 1)[0];
+    arr.splice(to, 0, item);
+    persist(); render();
   }
   function moveRow(list, from, to) {
     var s = editingScenario();
@@ -486,6 +624,9 @@
       else onFieldChange(e); // selects & checkboxes
     });
     document.addEventListener('click', onClick);
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && state.chartExpanded) { state.chartExpanded = false; render(); }
+    });
     document.addEventListener('dragstart', onDragStart);
     document.addEventListener('dragover', onDragOver);
     document.addEventListener('drop', onDrop);

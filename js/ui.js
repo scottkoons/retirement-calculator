@@ -10,6 +10,9 @@
 
   var MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
     'July', 'August', 'September', 'October', 'November', 'December'];
+  // Short labels for the compact date pickers (reads as "Sep 2026").
+  var MONTHS_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var CLAIM_AGES = [62, 63, 64, 65, 66, 67, 68, 69, 70];
   var SS_AGES = [62, 65, 66, 67, 70];
 
@@ -52,7 +55,7 @@
       ' value="' + esc(value) + '" placeholder="' + esc(placeholder || 'YYYY') + '">';
   }
   function monthSelect(scope, path, value) {
-    var opts = MONTHS.map(function (m, i) {
+    var opts = MONTHS_ABBR.map(function (m, i) {
       return '<option value="' + (i + 1) + '"' + ((+value) === (i + 1) ? ' selected' : '') + '>' + m + '</option>';
     }).join('');
     return '<select class="mo" ' + attr(scope, path) + '>' + opts + '</select>';
@@ -123,6 +126,14 @@
   function shortMoney(n) {
     if (n == null || isNaN(n) || n === 0) return '$0';
     var a = Math.abs(n), sign = n < 0 ? '-' : '';
+    if (a >= 1000) return sign + '$' + Math.round(a / 1000) + 'K';
+    return sign + '$' + Math.round(a);
+  }
+  // Compact money with an M tier for the big headline figures: $3.40M, $258K, $0.
+  function shortMoneyMM(n) {
+    if (n == null || isNaN(n)) return '—';
+    var a = Math.abs(n), sign = n < 0 ? '-' : '';
+    if (a >= 1e6) return sign + '$' + (a / 1e6).toFixed(2) + 'M';
     if (a >= 1000) return sign + '$' + Math.round(a / 1000) + 'K';
     return sign + '$' + Math.round(a);
   }
@@ -414,35 +425,127 @@
     return (Math.round(parseFloat(n) * 10) / 10).toString();
   }
 
+  // Shared source of the headline figures so the static render, the live slider
+  // updates, and the income-breakdown card all agree. Runs the projection once.
+  function dashboardStats(state) {
+    var s = primaryScenario(state);
+    var a = state.settings.assumptions || {};
+    var age = s && s.retireAge !== '' && s.retireAge != null ? String(s.retireAge) : '—';
+    var ret = oneDecimal(s ? avgReturn(state, s) : a.returnPct);
+    var startRaw = s && s.startingBalance !== '' && s.startingBalance != null
+      ? s.startingBalance : state.settings.currentSavings;
+    var start = (startRaw === '' || startRaw == null) ? '—' : shortMoney(num(startRaw));
+
+    var proj = s ? global.RetEngine.projectScenario(s, state.settings, { now: state.now }) : null;
+    var bd = s ? global.RetEngine.incomeBreakdown(s, state.settings, { now: state.now }) : null;
+    var nestEgg = proj ? proj.summary.nestEggAtRetirement : null;
+
+    return {
+      primaryId: s ? s.id : null,
+      name: s ? s.name : 'No scenario yet',
+      hasScenario: !!s,
+      // raw slider values (fall back to sensible mid-points when blank)
+      ageVal: s && s.retireAge !== '' && s.retireAge != null ? num(s.retireAge) : 65,
+      retVal: a.returnPct !== '' && a.returnPct != null ? num(a.returnPct) : 6,
+      age: age, ret: ret, start: start,
+      // projected outcomes (react to the retirement-age slider)
+      balance: bd ? shortMoneyMM(nestEgg) : '—',
+      monthly: bd ? fmtMoney(bd.monthlyIncome) : '—',
+      annual: bd ? shortMoneyMM(bd.annualIncome) : '—',
+      breakdown: bd,
+      yby: proj ? proj.yearByYear : null
+    };
+  }
+
   // Three big headline figures, mirroring the reference dashboard: target
   // retirement age, average return, and starting amount. Values are white —
-  // no orange on the numbers (including the dollar sign).
-  function statHeader(state) {
-    var s = primaryScenario(state);
-    var name = s ? s.name : 'No scenario yet';
-
-    var age = s && s.retireAge !== '' && s.retireAge != null ? s.retireAge : '—';
-    var ret = oneDecimal(s ? avgReturn(state, s) : (state.settings.assumptions || {}).returnPct);
-    var startRaw = s && s.startingBalance !== '' && s.startingBalance != null
-      ? s.startingBalance : (state.settings.currentSavings);
-    var startNum = num(startRaw);
-    var start = (startRaw === '' || startRaw == null) ? '—' : shortMoney(startNum);
-
-    function card(icon, label, valHtml) {
+  // no orange on the numbers (including the dollar sign). The first two carry
+  // a slider so you can dial them in and watch the chart move.
+  function statHeader(d) {
+    function card(icon, label, key, valHtml, slider) {
       return '<div class="stat-card">' +
         '<div class="stat-top"><span class="stat-label">' + label + '</span>' +
         '<span class="stat-ico" aria-hidden="true">' + icon + '</span></div>' +
-        '<div class="stat-value">' + valHtml + '</div></div>';
+        '<div class="stat-value">' + valHtml + '</div>' +
+        (slider || '') + '</div>';
     }
+    function valNum(key, text, unit) {
+      return '<span class="stat-num" data-stat-val="' + key + '">' + esc(text) + '</span>' +
+        (unit ? '<span class="stat-unit">' + unit + '</span>' : '');
+    }
+    // Retirement-age slider targets the primary scenario; return slider edits
+    // the shared Settings assumption (it feeds every scenario).
+    var ageSlider = d.hasScenario
+      ? '<input type="range" class="stat-slider" min="50" max="75" step="1" value="' + d.ageVal +
+        '" data-stat="retireAge" data-id="' + d.primaryId + '" aria-label="Target retirement age">'
+      : '';
+    var retSlider = '<input type="range" class="stat-slider" min="0" max="12" step="0.1" value="' + d.retVal +
+      '" data-stat="returnPct" aria-label="Average return percent">';
 
     return '<div class="stat-head">' +
-      '<div class="stat-context">Showing <strong>' + esc(name) + '</strong>' +
-        (s ? '' : ' — create a scenario to see your numbers') + '</div>' +
+      '<div class="stat-context">Showing <strong>' + esc(d.name) + '</strong>' +
+        (d.hasScenario ? '' : ' — create a scenario to see your numbers') + '</div>' +
       '<div class="stat-row">' +
-        card('▤', 'Target retirement age', esc(String(age)) + '<span class="stat-unit">years</span>') +
-        card('↗', 'Average return', esc(ret) + '<span class="stat-unit">%</span>') +
-        card('▦', 'Starting amount', esc(start)) +
+        card('▤', 'Target retirement age', 'retireAge', valNum('retireAge', d.age, 'years'), ageSlider) +
+        card('↗', 'Average return', 'returnPct', valNum('returnPct', d.ret, '%'), retSlider) +
+        card('▦', 'Starting amount', 'start', valNum('start', d.start, '')) +
       '</div></div>';
+  }
+
+  // Second row — the projected OUTCOMES that move with the sliders: balance at
+  // retirement, monthly income, annual income. Each card has its own accent.
+  function resultRow(d) {
+    var ageTxt = d.hasScenario ? d.age : '—';
+    function rcard(color, dot, top, key, val, sub) {
+      return '<div class="result-card" style="--rc:' + color + '">' +
+        '<div class="stat-top"><span class="stat-label">' + dot + top + '</span></div>' +
+        '<div class="stat-value"><span class="stat-num" data-stat-val="' + key + '">' + esc(val) + '</span></div>' +
+        '<div class="rc-sub">' + sub + '</div></div>';
+    }
+    var dot = '<span class="rc-dot"></span>';
+    var ageEcho = '<span data-stat-val="ageEcho">' + esc(ageTxt) + '</span>';
+    return '<div class="result-row">' +
+      rcard('#f59e0b', dot, 'At retirement (' + ageEcho + ')', 'balance', d.balance, 'Projected balance') +
+      rcard('#10b981', dot, 'Monthly income', 'monthly', d.monthly, 'At age ' + ageEcho) +
+      rcard('#ec4899', dot, 'Annual income', 'annual', d.annual, 'At age ' + ageEcho) +
+    '</div>';
+  }
+
+  // Income Breakdown — where the monthly income comes from at retirement, with
+  // a bar per source, Tax / Tax-free badges, and taxable vs tax-free totals.
+  function incomeBreakdownCard(d) {
+    if (!d.hasScenario || !d.breakdown) {
+      return '<div class="card"><h3>Income breakdown</h3>' +
+        '<p class="muted small" style="margin:0">Add a scenario with spending, Social Security, VA, or other income to see where your retirement income comes from.</p></div>';
+    }
+    var bd = d.breakdown;
+    var SRC_COLORS = { withdrawal: '#8b5cf6', va: '#ec4899', ssA: '#10b981', ssB: '#fbbf24', extra: '#0891b2' };
+    var max = bd.sources.reduce(function (m, s) { return Math.max(m, s.amount); }, 0) || 1;
+    var rows = bd.sources.length
+      ? bd.sources.map(function (s) {
+          var color = SRC_COLORS[s.key] || '#0891b2';
+          var pct = Math.max(2, Math.round((s.amount / max) * 100));
+          var badge = s.taxable
+            ? '<span class="tax-badge tax">Tax</span>'
+            : '<span class="tax-badge free">Tax-free</span>';
+          return '<div class="ib-row">' +
+            '<div class="ib-head">' +
+              '<span class="ib-name"><span class="ib-dot" style="background:' + color + '"></span>' + esc(s.label) + ' ' + badge + '</span>' +
+              '<span class="ib-amt mono">' + fmtMoney(s.amount) + '</span>' +
+            '</div>' +
+            '<div class="ib-track"><span class="ib-fill" style="width:' + pct + '%;background:' + color + '"></span></div>' +
+          '</div>';
+        }).join('')
+      : '<p class="muted small" style="margin:0">No income at this age yet — adjust spending, claiming ages, or income streams.</p>';
+
+    return '<div class="card income-card">' +
+      '<h3>Income breakdown <span class="ib-sub">at age ' + esc(String(bd.age)) + ' · ' + esc(d.name) + '</span></h3>' +
+      '<div class="ib-list">' + rows + '</div>' +
+      '<div class="ib-totals">' +
+        '<div class="ib-total taxable"><span class="ib-total-lbl">Taxable / mo</span><span class="ib-total-val mono">' + fmtMoney(bd.taxableMonthly) + '</span></div>' +
+        '<div class="ib-total free"><span class="ib-total-lbl">Tax-free / mo</span><span class="ib-total-val mono">' + fmtMoney(bd.taxfreeMonthly) + '</span></div>' +
+      '</div>' +
+    '</div>';
   }
 
   // "Control panel" of scenario chips across the top — click to add/remove a
@@ -454,29 +557,93 @@
         '<p class="muted small" style="margin:0">No scenarios yet. </p>' +
         '<button class="scn-chip add" data-action="add-scenario">+ New scenario</button></div>';
     }
-    var chips = state.scenarios.map(function (s) {
+    var chips = state.scenarios.map(function (s, i) {
       var on = state.selectedScenarioIds.indexOf(s.id) >= 0 ? ' on' : '';
-      return '<button class="scn-chip' + on + '" data-action="chip-select" data-id="' + s.id + '" title="Toggle in comparison">' +
-        '<span class="pill-dot" style="background:' + (s.color || '#888') + '"></span>' +
-        '<span class="pill-name">' + esc(s.name) + '</span></button>';
+      return '<div class="scn-chip' + on + '" draggable="true" data-index="' + i + '" data-id="' + s.id + '" title="Drag to reorder">' +
+        '<button class="scn-pick" data-action="chip-select" data-id="' + s.id + '" title="Toggle in comparison">' +
+          '<span class="pill-dot" style="background:' + (s.color || '#888') + '"></span>' +
+          '<span class="pill-name">' + esc(s.name) + '</span></button>' +
+        '<button class="scn-copy" data-action="duplicate-scenario" data-id="' + s.id + '" title="Duplicate this scenario" aria-label="Duplicate ' + esc(s.name) + '">⧉</button>' +
+      '</div>';
     }).join('');
     chips += '<button class="scn-chip add" data-action="add-scenario" title="New scenario">+ New</button>';
     return '<div class="scenario-bar">' + chips + '</div>';
   }
 
+  // Balance chart card with zoom controls + expand-to-fullscreen.
+  function chartCard(state) {
+    var expanded = !!state.chartExpanded;
+    return '<div class="card chart-card' + (expanded ? ' expanded' : '') + '">' +
+      '<div class="chart-head">' +
+        '<div class="chart-title"><h3>Balance over time</h3>' + chartBasisNote(state) + '</div>' +
+        '<div class="chart-tools">' +
+          '<button class="btn small ghost" data-action="reset-zoom">Reset zoom</button>' +
+          '<button class="btn small ghost" data-action="expand-chart">' + (expanded ? '✕ Close' : '⤢ Expand') + '</button>' +
+        '</div>' +
+      '</div>' +
+      '<p class="muted small zoom-hint">Drag across to zoom · scroll to zoom · Ctrl-drag to pan · hover a ◆ for event details</p>' +
+      '<div class="chart-wrap"><canvas id="balanceChart"></canvas></div>' +
+    '</div>';
+  }
+
+  // Collapsible year-by-year table: balance, contribution, withdrawal, and the
+  // monthly / annual income you live on at each age.
+  function yearByYearCard(state, d) {
+    if (!d.hasScenario || !d.yby || !d.yby.length) return '';
+    var collapsed = !!state.yByYCollapsed;
+    var all = !!state.yByYAll;
+    var retireAgeNum = parseInt(d.age, 10);
+    var base = d.yby[0].age;
+    var rowsArr = d.yby.filter(function (r) { return all || r.retired; });
+    var body = rowsArr.map(function (r) {
+      var isRetire = r.age === retireAgeNum;
+      return '<tr class="' + (isRetire ? 'retire-row' : '') + '">' +
+        '<td class="yby-l">' + (r.age - base) + '</td>' +
+        '<td class="yby-l yby-age">' + r.age + (isRetire ? ' <span class="yby-tag">retire</span>' : '') + '</td>' +
+        '<td class="mono">' + shortMoneyMM(r.balance) + '</td>' +
+        '<td class="mono dim">' + (r.contributionMonthly > 0 ? fmtMoney(r.contributionMonthly) : '—') + '</td>' +
+        '<td class="mono dim">' + (r.withdrawalMonthly > 0 ? fmtMoney(r.withdrawalMonthly) : '—') + '</td>' +
+        '<td class="mono yby-inc">' + (r.monthlyIncome > 0 ? fmtMoney(r.monthlyIncome) : '—') + '</td>' +
+        '<td class="mono yby-inc">' + (r.annualIncome > 0 ? shortMoneyMM(r.annualIncome) : '—') + '</td>' +
+      '</tr>';
+    }).join('');
+
+    return '<div class="card yby-card">' +
+      '<div class="yby-head">' +
+        '<button class="yby-toggle" data-action="toggle-yby">' +
+          '<span class="yby-chevron">' + (collapsed ? '▸' : '▾') + '</span> Year by year — ' + esc(d.name) +
+        '</button>' +
+        (collapsed ? '' :
+          '<div class="seg-toggle">' +
+            '<button class="seg-btn' + (!all ? ' active' : '') + '" data-action="set-yby-mode" data-mode="retire">Retirement only</button>' +
+            '<button class="seg-btn' + (all ? ' active' : '') + '" data-action="set-yby-mode" data-mode="all">All years</button>' +
+          '</div>') +
+      '</div>' +
+      (collapsed ? '' :
+        '<div class="table-scroll yby-scroll"><table class="yby-table"><thead><tr>' +
+          '<th class="yby-l">Year</th><th class="yby-l">Age</th><th>Balance</th><th>Contribution</th>' +
+          '<th>Withdrawal</th><th>Monthly income</th><th>Annual income</th>' +
+        '</tr></thead><tbody>' + body + '</tbody></table>' +
+        '<p class="muted small" style="margin:.6rem .2rem 0">Actual future dollars. Income = guaranteed sources + the withdrawal needed to meet spending.</p></div>') +
+    '</div>';
+  }
+
   function renderDashboard(state) {
+    var d = dashboardStats(state);
     var selected = state.scenarios.filter(function (s) { return state.selectedScenarioIds.indexOf(s.id) >= 0; });
     var table = selected.length ? buildCompareTable(state, selected)
       : '<p class="muted">Pick one or more scenarios above to compare them.</p>';
 
     return '<div class="tab-pane">' +
-      statHeader(state) +
+      statHeader(d) +
+      resultRow(d) +
       '<div class="bar"><p class="intro" style="margin:0">Pick the scenarios to compare side by side.</p>' +
         dollarBasisToggle(state) + '</div>' +
       scenarioBar(state) +
+      incomeBreakdownCard(d) +
+      chartCard(state) +
+      yearByYearCard(state, d) +
       '<div class="card">' + table + '</div>' +
-      '<div class="card"><h3>Projected balance over time</h3>' + chartBasisNote(state) +
-        '<div class="chart-wrap"><canvas id="balanceChart"></canvas></div></div>' +
     '</div>';
   }
 
@@ -525,6 +692,7 @@
     renderSettings: renderSettings,
     renderScenarios: renderScenarios,
     renderDashboard: renderDashboard,
+    dashboardStats: dashboardStats,
     renderMiniSummary: renderMiniSummary,
     refreshComputedCells: refreshComputedCells,
     fmtMoney: fmtMoney,

@@ -594,6 +594,13 @@ input.grow { flex: 1; min-width: 150px; }
   display: inline-grid; place-items: center; vertical-align: middle;
 }
 .ib-x:hover { color: var(--rose); background: var(--rose-dim); }
+.ib-row.inactive { opacity: .5; }
+.ib-row.inactive .ib-fill { opacity: .55; }
+.ib-soon {
+  font-family: var(--mono); font-size: .58rem; font-weight: 600; color: var(--muted);
+  text-transform: uppercase; letter-spacing: .04em; border: 1px solid var(--line);
+  padding: .1rem .38rem; border-radius: 4px; margin-left: .1rem;
+}
 
 /* Income-sources editor (Settings) */
 .isrc-row {

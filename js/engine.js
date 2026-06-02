@@ -358,21 +358,34 @@
     var atAbs = birthAbsA + retireAge * 12;
     if (atAbs < nowAbs) atAbs = nowAbs;       // already retired → measure at now
     var months = atAbs - nowAbs;
+    var birthAbsB = toAbs(num(personB.birthMonth, 1), num(personB.birthYear, now.year));
 
     var sources = [], guaranteed = 0;
+    // A source is "active" if it has begun by the displayed age. Inactive sources
+    // (e.g. a spouse who claims later) are still listed with their start age, but
+    // not counted toward the totals until they begin.
+    function add(obj, startAbs, startsAtAge) {
+      obj.active = atAbs >= startAbs;
+      if (!obj.active) obj.startsAtAge = startsAtAge;
+      if (obj.active) guaranteed += obj.amount;
+      sources.push(obj);
+    }
 
-    // Global income sources (VA, pension, rental…), projected to retirement.
+    // Global income sources (VA, pension, rental…), projected with COLA.
     (settings.incomeSources || []).forEach(function (src, i) {
       var startAbs = has(src.startAge) ? birthAbsA + num(src.startAge) * 12 : atAbs;
-      if (atAbs >= startAbs) {
-        var amt = inflate(num(src.monthly), num(src.colaPct, 0), months);
-        if (amt > 0) { sources.push({ key: 'src', srcIndex: i, label: src.label || 'Income', amount: amt, taxable: !!src.taxable, removable: true }); guaranteed += amt; }
-      }
+      var when = (atAbs >= startAbs) ? months : (startAbs - nowAbs);
+      var amt = inflate(num(src.monthly), num(src.colaPct, 0), when);
+      if (amt > 0) add({ key: 'src', srcIndex: i, label: src.label || 'Income', amount: amt, taxable: !!src.taxable, removable: true },
+        startAbs, has(src.startAge) ? num(src.startAge) : retireAge);
     });
-    var ssA = ssIncome(personA, num(scenario.claimAgeA, retireAge), atAbs, nowAbs, ssColaPct);
-    var ssB = ssIncome(personB, num(scenario.claimAgeB, retireAge), atAbs, nowAbs, ssColaPct);
-    if (ssA > 0) { sources.push({ key: 'ssA', label: 'Social Security' + (personA.name ? ' (' + personA.name + ')' : ' (You)'), amount: ssA, taxable: true }); guaranteed += ssA; }
-    if (ssB > 0) { sources.push({ key: 'ssB', label: 'Social Security' + (personB.name ? ' (' + personB.name + ')' : ' (Spouse)'), amount: ssB, taxable: true }); guaranteed += ssB; }
+    // Social Security per person, valued at that person's own claim age.
+    var claimA = num(scenario.claimAgeA, retireAge), startA = birthAbsA + claimA * 12;
+    var ssA = ssIncome(personA, claimA, atAbs >= startA ? atAbs : startA, nowAbs, ssColaPct);
+    if (ssA > 0) add({ key: 'ssA', label: 'Social Security' + (personA.name ? ' (' + personA.name + ')' : ' (You)'), amount: ssA, taxable: true }, startA, claimA);
+    var claimB = num(scenario.claimAgeB, retireAge), startB = birthAbsB + claimB * 12;
+    var ssB = ssIncome(personB, claimB, atAbs >= startB ? atAbs : startB, nowAbs, ssColaPct);
+    if (ssB > 0) add({ key: 'ssB', label: 'Social Security' + (personB.name ? ' (' + personB.name + ')' : ' (Spouse)'), amount: ssB, taxable: true }, startB, claimB);
 
     // Withdrawal: use the projection's value when given (reflects the chosen
     // strategy); otherwise fall back to the spending-gap default.
@@ -384,16 +397,17 @@
       var spending = inflate(num(scenario.retirementSpending), inflationPct, months);
       withdrawal = Math.max(0, spending - guaranteed);
     }
-    if (withdrawal > 0) sources.push({ key: 'withdrawal', label: 'Investment withdrawal', amount: withdrawal, taxable: wTaxable });
+    if (withdrawal > 0) sources.push({ key: 'withdrawal', label: 'Investment withdrawal', amount: withdrawal, taxable: wTaxable, active: true });
 
-    sources.sort(function (x, y) { return y.amount - x.amount; });
+    // Active sources first, then by amount.
+    sources.sort(function (x, y) { if (x.active !== y.active) return x.active ? -1 : 1; return y.amount - x.amount; });
     var monthlyIncome = guaranteed + withdrawal;
     var taxable = 0, taxfree = 0;
-    sources.forEach(function (s) { if (s.taxable) taxable += s.amount; else taxfree += s.amount; });
+    sources.forEach(function (s) { if (!s.active) return; if (s.taxable) taxable += s.amount; else taxfree += s.amount; });
 
     return {
       age: retireAge,
-      sources: sources.map(function (s) { return { key: s.key, srcIndex: s.srcIndex, removable: !!s.removable, label: s.label, amount: Math.round(s.amount), taxable: s.taxable }; }),
+      sources: sources.map(function (s) { return { key: s.key, srcIndex: s.srcIndex, removable: !!s.removable, label: s.label, amount: Math.round(s.amount), taxable: s.taxable, active: s.active !== false, startsAtAge: s.startsAtAge }; }),
       monthlyIncome: Math.round(monthlyIncome),
       annualIncome: Math.round(monthlyIncome * 12),
       taxableMonthly: Math.round(taxable),

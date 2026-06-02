@@ -628,9 +628,11 @@
           var rm = s.removable
             ? '<button class="ib-x" data-action="remove-income-source" data-index="' + s.srcIndex + '" title="Remove this income source">✕</button>'
             : '';
-          return '<div class="ib-row">' +
+          var soon = (s.active === false && s.startsAtAge != null)
+            ? '<span class="ib-soon">from age ' + esc(String(s.startsAtAge)) + '</span>' : '';
+          return '<div class="ib-row' + (s.active === false ? ' inactive' : '') + '">' +
             '<div class="ib-head">' +
-              '<span class="ib-name"><span class="ib-dot" style="background:' + color + '"></span>' + esc(s.label) + ' ' + badge + rm + '</span>' +
+              '<span class="ib-name"><span class="ib-dot" style="background:' + color + '"></span>' + esc(s.label) + ' ' + badge + soon + rm + '</span>' +
               '<span class="ib-amt mono">' + fmtMoney(s.amount) + '</span>' +
             '</div>' +
             '<div class="ib-track"><span class="ib-fill" style="width:' + pct + '%;background:' + color + '"></span></div>' +

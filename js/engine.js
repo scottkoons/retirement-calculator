@@ -242,7 +242,9 @@
         });
 
         var taxGuar = incomeTaxable * taxPct / 100;
-        var wType = (scenario.withdrawal && scenario.withdrawal.type) || 'spending';
+        // Withdrawal strategy is global (same rule across scenarios).
+        var wcfg = settings.withdrawal || {};
+        var wType = wcfg.type || 'spending';
         var mFromNow = absM - nowAbs;
         if (wType === 'spending') {
           // Default model: fund a spending target. Guaranteed income flows in,
@@ -254,7 +256,7 @@
         } else {
           // Rule-based withdrawal: the portfolio is drawn by the rule; guaranteed
           // income is spent outside it. Income you live on = guaranteed + withdrawal.
-          var wr = scenario.withdrawal || {};
+          var wr = wcfg;
           var wd = 0;
           if (wType === 'interest') wd = Math.max(0, growthThisMonth);
           else if (wType === 'percent') wd = Math.max(0, balance) * (num(wr.ratePct, 4) / 100) / 12;
@@ -381,7 +383,7 @@
 
     // Withdrawal: use the projection's value when given (reflects the chosen
     // strategy); otherwise fall back to the spending-gap default.
-    var wTaxable = !scenario.withdrawal || scenario.withdrawal.taxable !== false;
+    var wTaxable = !settings.withdrawal || settings.withdrawal.taxable !== false;
     var withdrawal;
     if (opts.withdrawal != null) {
       withdrawal = Math.max(0, num(opts.withdrawal));

@@ -349,37 +349,45 @@
     return '<button class="btn small" data-action="add-row" data-list="' + list + '">' + esc(label) + '</button>';
   }
 
-  // How the portfolio is drawn down in retirement. Default "spending" keeps the
-  // existing behavior; the other types model rules like the 4% rule.
-  function withdrawalSection(s) {
-    var w = s.withdrawal || {};
+  // Global withdrawal strategy control for the dashboard (the same rule applies
+  // to every scenario so comparisons are apples-to-apples). Lives under the
+  // stat/result cards, left of the income breakdown.
+  function withdrawalControl(state) {
+    var w = (state.settings && state.settings.withdrawal) || {};
     var type = w.type || 'spending';
-    var types = [['spending', 'Cover my spending target'], ['none', 'No withdrawal'],
+    var types = [['spending', 'Cover spending target'], ['none', 'No withdrawal'],
       ['interest', 'Interest only'], ['percent', 'Percentage of balance'], ['fixed', 'Fixed monthly amount']];
     var opts = types.map(function (t) {
       return '<option value="' + t[0] + '"' + (type === t[0] ? ' selected' : '') + '>' + t[1] + '</option>';
     }).join('');
-    var extra = '';
-    if (type === 'percent') extra = '<div class="field"><label>Withdrawal rate (annual)</label>' +
-      numInput('scenario', 'withdrawal.ratePct', w.ratePct == null ? 4 : w.ratePct, '%', 'pct') + '</div>';
-    else if (type === 'fixed') extra = '<div class="field"><label>Monthly amount (today\'s $)</label>' +
-      moneyInput('scenario', 'withdrawal.amount', w.amount, '$/mo') + '</div>';
-    var taxField = (type === 'none') ? '' :
-      '<div class="field"><label>Tax status</label><label class="chk pick"><input type="checkbox" ' +
-        'data-scope="scenario" data-path="withdrawal.taxable"' + (w.taxable !== false ? ' checked' : '') +
-        '> Withdrawals are taxable</label></div>';
+    var control = '';
+    if (type === 'percent') {
+      var rate = w.ratePct == null ? 4 : w.ratePct;
+      control = '<div class="wc-slider">' +
+        '<div class="wc-sliderlabel">Annual rate <span class="wc-rateval" data-stat-val="wdRate">' + oneDecimal(rate) + '%</span></div>' +
+        '<input type="range" class="stat-slider" min="0" max="10" step="0.1" value="' + rate + '" data-stat="wdRate" aria-label="Withdrawal rate percent"></div>';
+    } else if (type === 'fixed') {
+      control = '<div class="wc-slider"><div class="wc-sliderlabel">Monthly amount (today\'s $)</div>' +
+        '<input type="number" class="stat-edit-input wc-amt" min="0" step="100" value="' + esc(w.amount == null ? '' : w.amount) + '" data-stat="wdAmount" aria-label="Fixed monthly withdrawal"></div>';
+    }
     var hints = {
-      spending: 'Withdraws just enough to cover your spending target after guaranteed income — the default.',
+      spending: 'Withdraws just enough to cover each scenario\'s spending target after guaranteed income.',
       none: 'Live only on guaranteed income (Social Security, VA, pensions); the portfolio is left to grow.',
       interest: 'Withdraw only each month\'s investment growth, preserving the principal.',
-      percent: 'Withdraw a fixed percentage of the balance each year — the classic 4% rule.',
+      percent: 'Withdraw this % of the balance each year — the classic 4% rule.',
       fixed: 'Withdraw a fixed dollar amount each month (grown with inflation).'
     };
-    return sectionCard('withdraw', 'Withdrawal Strategy', '',
-      '<div class="grid3">' +
-        '<div class="field"><label>Type</label><select data-scope="scenario" data-path="withdrawal.type">' + opts + '</select></div>' +
-        extra + taxField +
-      '</div>', hints[type]);
+    var tax = (type === 'none' || type === 'spending') ? '' :
+      '<label class="chk pick wc-tax"><input type="checkbox" data-scope="settings" data-path="settings.withdrawal.taxable"' +
+        (w.taxable !== false ? ' checked' : '') + '> Taxable</label>';
+    return '<div class="card wc-card">' +
+      '<div class="stat-top"><span class="stat-label">Withdrawal strategy · all scenarios</span></div>' +
+      '<div class="wc-row">' +
+        '<select class="wc-type" data-scope="settings" data-path="settings.withdrawal.type">' + opts + '</select>' +
+        control + tax +
+      '</div>' +
+      '<p class="muted small wc-hint">' + hints[type] + '</p>' +
+    '</div>';
   }
 
   function renderScenarioEditor(state, inline) {
@@ -412,8 +420,6 @@
       sectionCard('income', 'Retirement Income Streams', addBtn('extraIncome', '+ Add income'),
         incomeTable(state, s),
         'Recurring income in retirement — pension, rental, business. Tick "tax" if it\'s taxable. Leave "To" blank for lifetime income.') +
-
-      withdrawalSection(s) +
 
       sectionCard('return', 'Investment Return by Age', addBtn('returnPhases', '+ Add phase'),
         returnPhaseTable(state, s),
@@ -518,6 +524,7 @@
       retVal: a.returnPct !== '' && a.returnPct != null ? num(a.returnPct) : 6,
       age: age, ret: ret, start: start,
       startSettingRaw: (startSettingRaw == null ? '' : startSettingRaw),
+      wdRate: oneDecimal((state.settings.withdrawal || {}).ratePct == null ? 4 : state.settings.withdrawal.ratePct) + '%',
       // projected outcomes (react to the retirement-age slider)
       balance: bd ? shortMoneyMM(nestEgg) : '—',
       monthly: bd ? fmtMoney(bd.monthlyIncome) : '—',
@@ -633,10 +640,13 @@
         '<button class="scn-chip add" data-action="add-scenario">+ New scenario</button></div>';
     }
     var focused = primaryScenario(state);
+    var cmp = !!state.compareMode;
+    var compareIds = state.compareIds || [];
     var chips = state.scenarios.map(function (s, i) {
-      var on = focused && s.id === focused.id ? ' on' : '';
+      var on = (cmp ? compareIds.indexOf(s.id) >= 0 : (focused && s.id === focused.id)) ? ' on' : '';
+      var act = cmp ? 'toggle-compare' : 'focus-scenario';
       return '<div class="scn-chip' + on + '" draggable="true" data-index="' + i + '" data-id="' + s.id + '" title="Drag to reorder">' +
-        '<button class="scn-pick" data-action="focus-scenario" data-id="' + s.id + '" title="Show this scenario">' +
+        '<button class="scn-pick" data-action="' + act + '" data-id="' + s.id + '" title="' + (cmp ? 'Add/remove from chart' : 'Show this scenario') + '">' +
           '<span class="pill-dot" style="background:' + (s.color || '#888') + '"></span>' +
           '<span class="pill-name">' + esc(s.name) + '</span></button>' +
         '<button class="scn-copy" data-action="duplicate-scenario" data-id="' + s.id + '" title="Duplicate this scenario" aria-label="Duplicate ' + esc(s.name) + '">⧉</button>' +
@@ -716,12 +726,15 @@
       '<div class="dash-top">' +
         scenarioBar(state) +
         '<div class="dash-top-actions">' +
+          '<button class="btn small ghost compare-btn' + (state.compareMode ? ' on' : '') + '" data-action="toggle-compare-mode" title="Overlay multiple scenarios on the chart">' +
+            (state.compareMode ? '✓ Comparing' : '⇄ Compare') + '</button>' +
           dollarBasisToggle(state) +
           '<button class="btn small ghost" data-action="print-plan" title="Print or save as PDF">⎙ Print / PDF</button>' +
         '</div>' +
       '</div>' +
+      (state.compareMode ? '<p class="muted small compare-note">Compare mode — click scenarios above to add or remove them from the chart.</p>' : '') +
       '<div class="dash-grid">' +
-        '<div class="dash-cards">' + statHeader(d) + resultRow(d) + '</div>' +
+        '<div class="dash-cards">' + statHeader(d) + resultRow(d) + withdrawalControl(state) + '</div>' +
         incomeBreakdownCard(d) +
       '</div>' +
       chartCard(state) +

@@ -656,6 +656,27 @@ input.grow { flex: 1; min-width: 150px; }
 .stat-edit-input::-webkit-outer-spin-button,
 .stat-edit-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 
+/* Global withdrawal-strategy control on the dashboard */
+.wc-card { padding: 1rem 1.2rem 1.1rem; }
+.wc-row { display: flex; align-items: center; gap: 1.2rem; flex-wrap: wrap; margin-top: .7rem; }
+.wc-type { width: auto; min-width: 190px; }
+.wc-slider { flex: 1 1 230px; min-width: 200px; }
+.wc-sliderlabel {
+  font-size: .66rem; font-weight: 600; color: var(--muted);
+  text-transform: uppercase; letter-spacing: .07em; font-family: var(--mono);
+  margin-bottom: .25rem; display: flex; align-items: center; gap: .5rem;
+}
+.wc-rateval { color: var(--cyan); font-size: .95rem; letter-spacing: 0; font-weight: 700; }
+.wc-slider .stat-slider { margin: .25rem 0 0; }
+.wc-amt { font-size: 1.3rem; }
+.wc-tax { flex: 0 0 auto; }
+.wc-hint { margin: .7rem 0 0; }
+
+/* Compare button + note */
+.compare-btn.on { color: var(--accent-ink); background: var(--cyan); border-color: var(--cyan); }
+.compare-btn.on:hover { background: var(--cyan-2); border-color: var(--cyan-2); color: var(--accent-ink); }
+.compare-note { margin: -.8rem 0 1.2rem; }
+
 /* Scenario focus pills */
 .scenario-bar { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; flex: 1 1 auto; min-width: 0; }
 .scenario-bar.empty { gap: 1rem; }

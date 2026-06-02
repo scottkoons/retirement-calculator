@@ -63,8 +63,15 @@
   }
 
   /* ------------------------------ rendering ------------------------------ */
+  // The dashboard shows one "focused" scenario; keep the pointer valid.
+  function ensureFocus() {
+    var ok = state.scenarios.some(function (s) { return s.id === state.focusedId; });
+    if (!ok) state.focusedId = state.scenarios[0] ? state.scenarios[0].id : null;
+  }
+
   function render() {
     ensureScenarioColors();
+    ensureFocus();
     document.querySelectorAll('.tab-btn').forEach(function (b) {
       b.classList.toggle('active', b.dataset.tab === state.activeTab);
     });
@@ -103,19 +110,19 @@
         'Your numbers and comparisons above still work offline.</div>';
       return;
     }
-    var selected = state.scenarios.filter(function (s) { return state.selectedScenarioIds.indexOf(s.id) >= 0; });
+    var all = state.scenarios;
     if (chart) { chart.destroy(); chart = null; }
-    if (!selected.length) return;
+    if (!all.length) return;
+    var focused = all.filter(function (s) { return s.id === state.focusedId; })[0] || all[0];
 
-    // Soft top-down gradient under each line, fading to transparent — the
-    // "shaded area" look. Lighter when comparing several so they don't muddy.
-    var topAlpha = selected.length > 1 ? 0.16 : 0.4;
+    // Soft top-down gradient under the FOCUSED line, fading to transparent — the
+    // "shaded area" look. Other scenarios draw as plain lines for context.
     function areaFill(color) {
       return function (ctx) {
         var c = ctx.chart, area = c.chartArea;
-        if (!area) return hexToRgba(color, topAlpha * 0.5);
+        if (!area) return hexToRgba(color, 0.18);
         var g = c.ctx.createLinearGradient(0, area.top, 0, area.bottom);
-        g.addColorStop(0, hexToRgba(color, topAlpha));
+        g.addColorStop(0, hexToRgba(color, 0.36));
         g.addColorStop(1, hexToRgba(color, 0));
         return g;
       };
@@ -125,23 +132,27 @@
     var real = state.dollarBasis === 'real';
     var yKey = real ? 'balanceReal' : 'balance';
     var projById = {};
-    var datasets = selected.map(function (s, i) {
+    var datasets = all.map(function (s, i) {
       var r = global.RetEngine.projectScenario(s, state.settings, { now: state.now });
       projById[s.id] = r;
       var color = s.color || CHART_COLORS[i % CHART_COLORS.length];
+      var isFocus = s.id === focused.id;
       return {
         label: s.name,
         data: r.yearByYear.map(function (row) { return { x: row.age, y: row[yKey] }; }),
         borderColor: color, pointBackgroundColor: color,
-        backgroundColor: areaFill(color), fill: 'origin',
-        tension: 0.3, pointRadius: 0, pointHoverRadius: 4, borderWidth: 2.5, order: 2
+        backgroundColor: isFocus ? areaFill(color) : 'transparent',
+        fill: isFocus ? 'origin' : false,
+        tension: 0.3, pointRadius: 0, pointHoverRadius: 4,
+        borderWidth: isFocus ? 2.6 : 1.6, borderDash: isFocus ? [] : [5, 4],
+        order: isFocus ? 1 : 2
       };
     });
 
-    // Lump-sum event markers — only when one scenario is selected, to stay
-    // readable. Dots sit on the line at the event's age; details show on hover.
-    if (selected.length === 1) {
-      var yb = projById[selected[0].id].yearByYear;
+    // Lump-sum event markers for the focused scenario — dots on the line, with
+    // details on hover.
+    (function () {
+      var yb = projById[focused.id].yearByYear;
       var pa = state.settings.personA || {};
       var birthAbs = pa.birthYear ? pa.birthYear * 12 + ((pa.birthMonth || 1) - 1) : null;
       function balAtAge(age) {
@@ -149,7 +160,7 @@
         yb.forEach(function (row) { var dd = Math.abs(row.age - age); if (dd < bd) { bd = dd; best = row; } });
         return best ? best[yKey] : 0;
       }
-      var evPoints = (selected[0].lumpSums || []).filter(function (l) {
+      var evPoints = (focused.lumpSums || []).filter(function (l) {
         return l.year != null && l.year !== '' && (parseFloat(l.amount) || 0) !== 0 && birthAbs != null;
       }).map(function (l) {
         var age = ((+l.year) * 12 + ((+l.month || 1) - 1) - birthAbs) / 12;
@@ -163,7 +174,7 @@
           borderColor: themeVar('--panel', '#0d1219'), borderWidth: 2, order: 0
         });
       }
-    }
+    })();
 
     var INK = themeVar('--muted', '#aab6c8');
     var GRID = themeVar('--line', '#20293a');
@@ -238,6 +249,7 @@
     var s = newScenario();
     state.scenarios.push(s);
     state.editingId = s.id;
+    state.focusedId = s.id;
     if (state.selectedScenarioIds.indexOf(s.id) < 0) state.selectedScenarioIds.push(s.id);
     persist(); render();
   }
@@ -249,6 +261,7 @@
     copy.name = orig.name + ' (copy)';
     state.scenarios.push(copy);
     state.editingId = copy.id;
+    state.focusedId = copy.id;
     state.selectedScenarioIds.push(copy.id);
     persist(); render();
   }
@@ -395,8 +408,10 @@
       case 'edit-scenario': state.editingId = id; persist(); render(); break;
       case 'toggle-edit': state.editingId = (state.editingId === id ? null : id); persist(); render(); break;
       case 'pill-edit': state.activeTab = 'scenarios'; state.editingId = id; persist(); render(); break;
+      case 'focus-scenario': state.focusedId = id; persist(); render(); break;
+      case 'print-plan': window.print(); break;
       case 'chip-select': {
-        // Toggle a scenario in/out of the dashboard comparison.
+        // Legacy: toggle a scenario in/out of the comparison set.
         var ix = state.selectedScenarioIds.indexOf(id);
         if (ix >= 0) state.selectedScenarioIds.splice(ix, 1);
         else state.selectedScenarioIds.push(id);

@@ -412,8 +412,8 @@
   // The "primary" scenario drives the big headline stats: first selected, else
   // the first scenario that exists.
   function primaryScenario(state) {
-    var sel = state.scenarios.filter(function (s) { return state.selectedScenarioIds.indexOf(s.id) >= 0; });
-    return sel[0] || state.scenarios[0] || null;
+    var f = state.scenarios.filter(function (s) { return s.id === state.focusedId; })[0];
+    return f || state.scenarios[0] || null;
   }
   // Average investment return for a scenario: mean of its return phases if it
   // has any, otherwise the single Settings return.
@@ -490,8 +490,7 @@
       '" data-stat="returnPct" aria-label="Average return percent">';
 
     return '<div class="stat-head">' +
-      '<div class="stat-context">Showing <strong>' + esc(d.name) + '</strong>' +
-        (d.hasScenario ? '' : ' — create a scenario to see your numbers') + '</div>' +
+      (d.hasScenario ? '' : '<div class="stat-context">Create a scenario to see your numbers.</div>') +
       '<div class="stat-row">' +
         card('▤', 'Target retirement age', 'retireAge', valNum('retireAge', d.age, 'years'), ageSlider) +
         card('↗', 'Average return', 'returnPct', valNum('returnPct', d.ret, '%'), retSlider) +
@@ -558,16 +557,20 @@
   // "Control panel" of scenario chips across the top — click to add/remove a
   // scenario from the comparison. Replaces the old checkbox picker and the
   // header search bar.
+  // Top strip of scenario pills. Click a pill to FOCUS that scenario (its
+  // numbers fill the dashboard); the focused one is highlighted. Pills are
+  // draggable to reorder and each carries a duplicate button.
   function scenarioBar(state) {
     if (!state.scenarios.length) {
       return '<div class="scenario-bar empty">' +
-        '<p class="muted small" style="margin:0">No scenarios yet. </p>' +
+        '<span class="muted small">No scenarios yet.</span>' +
         '<button class="scn-chip add" data-action="add-scenario">+ New scenario</button></div>';
     }
+    var focused = primaryScenario(state);
     var chips = state.scenarios.map(function (s, i) {
-      var on = state.selectedScenarioIds.indexOf(s.id) >= 0 ? ' on' : '';
+      var on = focused && s.id === focused.id ? ' on' : '';
       return '<div class="scn-chip' + on + '" draggable="true" data-index="' + i + '" data-id="' + s.id + '" title="Drag to reorder">' +
-        '<button class="scn-pick" data-action="chip-select" data-id="' + s.id + '" title="Toggle in comparison">' +
+        '<button class="scn-pick" data-action="focus-scenario" data-id="' + s.id + '" title="Show this scenario">' +
           '<span class="pill-dot" style="background:' + (s.color || '#888') + '"></span>' +
           '<span class="pill-name">' + esc(s.name) + '</span></button>' +
         '<button class="scn-copy" data-action="duplicate-scenario" data-id="' + s.id + '" title="Duplicate this scenario" aria-label="Duplicate ' + esc(s.name) + '">⧉</button>' +
@@ -637,18 +640,26 @@
 
   function renderDashboard(state) {
     var d = dashboardStats(state);
-    var selected = state.scenarios.filter(function (s) { return state.selectedScenarioIds.indexOf(s.id) >= 0; });
-    var table = selected.length ? buildCompareTable(state, selected)
-      : '<p class="muted">Pick one or more scenarios above to compare them.</p>';
+    var all = state.scenarios;
+    var table = all.length ? buildCompareTable(state, all)
+      : '<p class="muted">Create scenarios to compare them here.</p>';
 
-    return '<div class="tab-pane">' +
+    // no-anim when expanded so the tab-pane has no transform (a transform would
+    // make the fullscreen chart's position:fixed size to this column, not the viewport).
+    return '<div class="tab-pane' + (state.chartExpanded ? ' no-anim' : '') + '">' +
+      '<div class="dash-top">' +
+        scenarioBar(state) +
+        '<div class="dash-top-actions">' +
+          dollarBasisToggle(state) +
+          '<button class="btn small ghost" data-action="print-plan" title="Print or save as PDF">⎙ Print / PDF</button>' +
+        '</div>' +
+      '</div>' +
       statHeader(d) +
       resultRow(d) +
-      '<div class="bar"><p class="intro" style="margin:0">Pick the scenarios to compare side by side.</p>' +
-        dollarBasisToggle(state) + '</div>' +
-      scenarioBar(state) +
-      incomeBreakdownCard(d) +
-      chartCard(state) +
+      '<div class="dash-cols">' +
+        chartCard(state) +
+        incomeBreakdownCard(d) +
+      '</div>' +
       yearByYearCard(state, d) +
       '<div class="card">' + table + '</div>' +
     '</div>';

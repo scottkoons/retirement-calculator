@@ -391,22 +391,89 @@
   }
 
   /* ----------------------------- Dashboard tab ---------------------------- */
-  function renderDashboard(state) {
-    var picker = state.scenarios.length
-      ? state.scenarios.map(function (s) {
-          var ch = state.selectedScenarioIds.indexOf(s.id) >= 0 ? ' checked' : '';
-          return '<label class="chk pick"><input type="checkbox" data-action="toggle-select" data-id="' + s.id + '"' + ch + '> ' + esc(s.name) + '</label>';
-        }).join('')
-      : '<p class="muted">No scenarios yet. Create some in the <strong>Scenarios</strong> tab, then pick them here to compare.</p>';
+  // The "primary" scenario drives the big headline stats: first selected, else
+  // the first scenario that exists.
+  function primaryScenario(state) {
+    var sel = state.scenarios.filter(function (s) { return state.selectedScenarioIds.indexOf(s.id) >= 0; });
+    return sel[0] || state.scenarios[0] || null;
+  }
+  // Average investment return for a scenario: mean of its return phases if it
+  // has any, otherwise the single Settings return.
+  function avgReturn(state, s) {
+    var base = (state.settings.assumptions || {}).returnPct;
+    var phases = (s && s.returnPhases) || [];
+    if (phases.length) {
+      var vals = phases.map(function (p) { return parseFloat(p.returnPct); })
+        .filter(function (n) { return isFinite(n); });
+      if (vals.length) return vals.reduce(function (a, b) { return a + b; }, 0) / vals.length;
+    }
+    return base;
+  }
+  function oneDecimal(n) {
+    if (n == null || n === '' || isNaN(n)) return '—';
+    return (Math.round(parseFloat(n) * 10) / 10).toString();
+  }
 
+  // Three big headline figures, mirroring the reference dashboard: target
+  // retirement age, average return, and starting amount. Values are white —
+  // no orange on the numbers (including the dollar sign).
+  function statHeader(state) {
+    var s = primaryScenario(state);
+    var name = s ? s.name : 'No scenario yet';
+
+    var age = s && s.retireAge !== '' && s.retireAge != null ? s.retireAge : '—';
+    var ret = oneDecimal(s ? avgReturn(state, s) : (state.settings.assumptions || {}).returnPct);
+    var startRaw = s && s.startingBalance !== '' && s.startingBalance != null
+      ? s.startingBalance : (state.settings.currentSavings);
+    var startNum = num(startRaw);
+    var start = (startRaw === '' || startRaw == null) ? '—' : shortMoney(startNum);
+
+    function card(icon, label, valHtml) {
+      return '<div class="stat-card">' +
+        '<div class="stat-top"><span class="stat-label">' + label + '</span>' +
+        '<span class="stat-ico" aria-hidden="true">' + icon + '</span></div>' +
+        '<div class="stat-value">' + valHtml + '</div></div>';
+    }
+
+    return '<div class="stat-head">' +
+      '<div class="stat-context">Showing <strong>' + esc(name) + '</strong>' +
+        (s ? '' : ' — create a scenario to see your numbers') + '</div>' +
+      '<div class="stat-row">' +
+        card('▤', 'Target retirement age', esc(String(age)) + '<span class="stat-unit">years</span>') +
+        card('↗', 'Average return', esc(ret) + '<span class="stat-unit">%</span>') +
+        card('▦', 'Starting amount', esc(start)) +
+      '</div></div>';
+  }
+
+  // "Control panel" of scenario chips across the top — click to add/remove a
+  // scenario from the comparison. Replaces the old checkbox picker and the
+  // header search bar.
+  function scenarioBar(state) {
+    if (!state.scenarios.length) {
+      return '<div class="scenario-bar empty">' +
+        '<p class="muted small" style="margin:0">No scenarios yet. </p>' +
+        '<button class="scn-chip add" data-action="add-scenario">+ New scenario</button></div>';
+    }
+    var chips = state.scenarios.map(function (s) {
+      var on = state.selectedScenarioIds.indexOf(s.id) >= 0 ? ' on' : '';
+      return '<button class="scn-chip' + on + '" data-action="chip-select" data-id="' + s.id + '" title="Toggle in comparison">' +
+        '<span class="pill-dot" style="background:' + (s.color || '#888') + '"></span>' +
+        '<span class="pill-name">' + esc(s.name) + '</span></button>';
+    }).join('');
+    chips += '<button class="scn-chip add" data-action="add-scenario" title="New scenario">+ New</button>';
+    return '<div class="scenario-bar">' + chips + '</div>';
+  }
+
+  function renderDashboard(state) {
     var selected = state.scenarios.filter(function (s) { return state.selectedScenarioIds.indexOf(s.id) >= 0; });
     var table = selected.length ? buildCompareTable(state, selected)
-      : '<p class="muted">Select one or more scenarios above to compare them.</p>';
+      : '<p class="muted">Pick one or more scenarios above to compare them.</p>';
 
     return '<div class="tab-pane">' +
-      '<div class="bar"><p class="intro" style="margin:0">Pick scenarios to compare side by side.</p>' +
+      statHeader(state) +
+      '<div class="bar"><p class="intro" style="margin:0">Pick the scenarios to compare side by side.</p>' +
         dollarBasisToggle(state) + '</div>' +
-      '<div class="card"><div class="picker">' + picker + '</div></div>' +
+      scenarioBar(state) +
       '<div class="card">' + table + '</div>' +
       '<div class="card"><h3>Projected balance over time</h3>' + chartBasisNote(state) +
         '<div class="chart-wrap"><canvas id="balanceChart"></canvas></div></div>' +

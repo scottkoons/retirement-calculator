@@ -202,12 +202,22 @@
       var ageA = (absM - birthAbsA) / 12;
       var retired = absM >= retireAbs;
 
-      // 1. investment growth — rate may vary by age via return phases
-      var rate = usePhases ? monthlyRate(returnRateAt(ageA, phases, returnPct)) : mRate;
+      // 1. investment growth — rate may vary by age via return phases, then an
+      // optional glide-path throttle near/at retirement (overrides in its window).
+      var annualR = usePhases ? returnRateAt(ageA, phases, returnPct) : returnPct;
+      var th = settings.returnThrottle;
+      if (th) {
+        if (th.atEnabled && ageA >= retireAge) annualR = num(th.atRate, annualR);
+        else if (th.preEnabled && ageA >= (retireAge - num(th.preYears, 0)) && ageA < retireAge) annualR = num(th.preRate, annualR);
+      }
+      var rate = monthlyRate(annualR);
+      var preGrowth = balance;
       balance *= (1 + rate);
+      var growthThisMonth = balance - preGrowth;
       balance += lumpAt(absM, scenario.lumpSums); // 2. lump sums (any phase)
 
       var incomeGross = 0, incomeTaxable = 0, spending = 0, contribThisMonth = 0;
+      var wdThisMonth = 0, miThisMonth = 0;
 
       if (!retired) {
         contribThisMonth = contributionFor(absM, scenario);
@@ -231,10 +241,33 @@
           }
         });
 
-        spending = inflate(num(scenario.retirementSpending), inflationPct, absM - nowAbs);
-        var tax = incomeTaxable * taxPct / 100;
-        balance += (incomeGross - tax - spending);
-        if (retirementIncomeFirst === null) retirementIncomeFirst = incomeGross;
+        var taxGuar = incomeTaxable * taxPct / 100;
+        var wType = (scenario.withdrawal && scenario.withdrawal.type) || 'spending';
+        var mFromNow = absM - nowAbs;
+        if (wType === 'spending') {
+          // Default model: fund a spending target. Guaranteed income flows in,
+          // spending flows out; any surplus is reinvested.
+          spending = inflate(num(scenario.retirementSpending), inflationPct, mFromNow);
+          balance += (incomeGross - taxGuar - spending);
+          wdThisMonth = Math.max(0, spending - (incomeGross - taxGuar));
+          miThisMonth = Math.max(spending, incomeGross);
+        } else {
+          // Rule-based withdrawal: the portfolio is drawn by the rule; guaranteed
+          // income is spent outside it. Income you live on = guaranteed + withdrawal.
+          var wr = scenario.withdrawal || {};
+          var wd = 0;
+          if (wType === 'interest') wd = Math.max(0, growthThisMonth);
+          else if (wType === 'percent') wd = Math.max(0, balance) * (num(wr.ratePct, 4) / 100) / 12;
+          else if (wType === 'fixed') wd = inflate(num(wr.amount), inflationPct, mFromNow);
+          // 'none' → wd stays 0
+          wd = Math.min(wd, Math.max(0, balance));
+          var taxWd = wr.taxable ? wd * taxPct / 100 : 0;
+          balance += (-wd - taxWd);
+          wdThisMonth = wd;
+          miThisMonth = incomeGross + wd;
+          spending = miThisMonth;
+        }
+        if (retirementIncomeFirst === null) retirementIncomeFirst = miThisMonth;
       }
 
       if (absM === retireAbs) nestEggAtRetirement = balance;
@@ -262,8 +295,7 @@
       // year-by-year table. Monthly income = guaranteed + withdrawal-to-spending.
       if ((absM - birthAbsA) % 12 === 0) {
         var rf = Math.pow(1 + inflationPct / 100, -(absM - nowAbs) / 12);
-        var wd = retired ? Math.max(0, spending - incomeGross) : 0;
-        var mi = retired ? Math.max(spending, incomeGross) : 0;
+        var wd = wdThisMonth, mi = miThisMonth;
         yearly.push({
           age: Math.round(ageA), year: fa.year, retired: retired,
           balance: Math.round(balance), balanceReal: Math.round(balance * rf),
@@ -347,9 +379,17 @@
     if (ssB > 0) { sources.push({ key: 'ssB', label: 'Social Security' + (personB.name ? ' (' + personB.name + ')' : ' (Spouse)'), amount: ssB, taxable: true }); guaranteed += ssB; }
     if (vaInc > 0) { sources.push({ key: 'va', label: 'VA Benefits', amount: vaInc, taxable: false }); guaranteed += vaInc; }
 
-    var spending = inflate(num(scenario.retirementSpending), inflationPct, months);
-    var withdrawal = Math.max(0, spending - guaranteed);
-    if (withdrawal > 0) sources.push({ key: 'withdrawal', label: 'Investment withdrawal', amount: withdrawal, taxable: true });
+    // Withdrawal: use the projection's value when given (reflects the chosen
+    // strategy); otherwise fall back to the spending-gap default.
+    var wTaxable = !scenario.withdrawal || scenario.withdrawal.taxable !== false;
+    var withdrawal;
+    if (opts.withdrawal != null) {
+      withdrawal = Math.max(0, num(opts.withdrawal));
+    } else {
+      var spending = inflate(num(scenario.retirementSpending), inflationPct, months);
+      withdrawal = Math.max(0, spending - guaranteed);
+    }
+    if (withdrawal > 0) sources.push({ key: 'withdrawal', label: 'Investment withdrawal', amount: withdrawal, taxable: wTaxable });
 
     sources.sort(function (x, y) { return y.amount - x.amount; });
     var monthlyIncome = guaranteed + withdrawal;

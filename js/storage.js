@@ -16,6 +16,8 @@
         personB: { name: '', birthMonth: 1, birthYear: 1962, ss: { 62: '', 65: '', 66: '', 67: '', 70: '' } },
         vaDisability: { monthly: '' },
         assumptions: { returnPct: 6, inflationPct: 3, ssColaPct: 2.5, effectiveTaxPct: 12 },
+        // Optional glide path: taper return before/at retirement. Off by default.
+        returnThrottle: { preEnabled: false, preYears: 3, preRate: 6, atEnabled: false, atRate: 5 },
         currentSavings: ''
       },
       scenarios: [],
@@ -37,6 +39,7 @@
       var merged = Object.assign(base, data);
       merged.settings = Object.assign(base.settings, data.settings || {});
       merged.settings.assumptions = Object.assign(defaultState().settings.assumptions, (data.settings || {}).assumptions || {});
+      merged.settings.returnThrottle = Object.assign(defaultState().settings.returnThrottle, (data.settings || {}).returnThrottle || {});
       (merged.scenarios || []).forEach(function (s) {
         migrateScenario(s);
         if (global.RetEngine && global.RetEngine.clampContributionPeriods) {

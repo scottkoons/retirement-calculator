@@ -104,6 +104,31 @@
         '<div class="field"><label>Social Security COLA %</label>' + numInput('settings', 'settings.assumptions.ssColaPct', a.ssColaPct, '%', 'pct') + '</div>' +
         '<div class="field"><label>Effective tax rate %</label>' + numInput('settings', 'settings.assumptions.effectiveTaxPct', a.effectiveTaxPct, '%', 'pct') + '</div>' +
       '</div><p class="muted small">Tax applies to Social Security and any income you mark taxable. VA disability is always tax-free.</p></div>' +
+      returnThrottleCard(s.returnThrottle || {}) +
+    '</div>';
+  }
+
+  // Optional glide path: taper the return as retirement nears and at retirement.
+  // Both toggles are off by default and apply to every scenario using its own
+  // retirement age (so the windows shift if you change a scenario's age).
+  function returnThrottleCard(rt) {
+    function tog(path, on, label) {
+      return '<label class="chk pick"><input type="checkbox" ' + attr('settings', path) + (on ? ' checked' : '') + '> ' + label + '</label>';
+    }
+    var pre = rt.preEnabled
+      ? '<span class="throttle-detail">Starting ' +
+          numInput('settings', 'settings.returnThrottle.preYears', rt.preYears == null ? 3 : rt.preYears, 'yrs', 'yr') +
+          ' years before retirement, use ' +
+          numInput('settings', 'settings.returnThrottle.preRate', rt.preRate == null ? 6 : rt.preRate, '%', 'pct') + ' %</span>'
+      : '';
+    var at = rt.atEnabled
+      ? '<span class="throttle-detail">From retirement on, use ' +
+          numInput('settings', 'settings.returnThrottle.atRate', rt.atRate == null ? 5 : rt.atRate, '%', 'pct') + ' %</span>'
+      : '';
+    return '<div class="card"><h3>Return throttle <span class="h3-tag" style="color:var(--cyan);background:var(--cyan-dim);border-color:var(--cyan-dim)">glide path</span></h3>' +
+      '<p class="muted small">Optionally ease your investment return down as retirement approaches, and again at retirement — without setting explicit age phases. Off by default. Applies to every scenario using its own retirement age.</p>' +
+      '<div class="throttle-row">' + tog('settings.returnThrottle.preEnabled', rt.preEnabled, 'Throttle before retirement') + pre + '</div>' +
+      '<div class="throttle-row">' + tog('settings.returnThrottle.atEnabled', rt.atEnabled, 'Throttle at &amp; after retirement') + at + '</div>' +
     '</div>';
   }
 
@@ -324,12 +349,48 @@
     return '<button class="btn small" data-action="add-row" data-list="' + list + '">' + esc(label) + '</button>';
   }
 
-  function renderScenarioEditor(state) {
+  // How the portfolio is drawn down in retirement. Default "spending" keeps the
+  // existing behavior; the other types model rules like the 4% rule.
+  function withdrawalSection(s) {
+    var w = s.withdrawal || {};
+    var type = w.type || 'spending';
+    var types = [['spending', 'Cover my spending target'], ['none', 'No withdrawal'],
+      ['interest', 'Interest only'], ['percent', 'Percentage of balance'], ['fixed', 'Fixed monthly amount']];
+    var opts = types.map(function (t) {
+      return '<option value="' + t[0] + '"' + (type === t[0] ? ' selected' : '') + '>' + t[1] + '</option>';
+    }).join('');
+    var extra = '';
+    if (type === 'percent') extra = '<div class="field"><label>Withdrawal rate (annual)</label>' +
+      numInput('scenario', 'withdrawal.ratePct', w.ratePct == null ? 4 : w.ratePct, '%', 'pct') + '</div>';
+    else if (type === 'fixed') extra = '<div class="field"><label>Monthly amount (today\'s $)</label>' +
+      moneyInput('scenario', 'withdrawal.amount', w.amount, '$/mo') + '</div>';
+    var taxField = (type === 'none') ? '' :
+      '<div class="field"><label>Tax status</label><label class="chk pick"><input type="checkbox" ' +
+        'data-scope="scenario" data-path="withdrawal.taxable"' + (w.taxable !== false ? ' checked' : '') +
+        '> Withdrawals are taxable</label></div>';
+    var hints = {
+      spending: 'Withdraws just enough to cover your spending target after guaranteed income — the default.',
+      none: 'Live only on guaranteed income (Social Security, VA, pensions); the portfolio is left to grow.',
+      interest: 'Withdraw only each month\'s investment growth, preserving the principal.',
+      percent: 'Withdraw a fixed percentage of the balance each year — the classic 4% rule.',
+      fixed: 'Withdraw a fixed dollar amount each month (grown with inflation).'
+    };
+    return sectionCard('withdraw', 'Withdrawal Strategy', '',
+      '<div class="grid3">' +
+        '<div class="field"><label>Type</label><select data-scope="scenario" data-path="withdrawal.type">' + opts + '</select></div>' +
+        extra + taxField +
+      '</div>', hints[type]);
+  }
+
+  function renderScenarioEditor(state, inline) {
     var s = state.scenarios.filter(function (x) { return x.id === state.editingId; })[0];
     if (!s) return '';
-    return '<div class="editor-wrap">' +
+    // Inline (accordion) mode: the row above already names the scenario and the
+    // row click collapses it, so we drop the "Editing: … / Done" header.
+    var head = inline ? '' :
       '<div class="editor-head"><h3>Editing: ' + esc(s.name) + '</h3>' +
-        '<button class="btn small" data-action="close-editor">Done</button></div>' +
+        '<button class="btn small" data-action="close-editor">Done</button></div>';
+    return '<div class="editor-wrap">' + head +
 
       sectionCard('basics', 'Basics', '',
         '<div class="grid3">' +
@@ -351,6 +412,8 @@
       sectionCard('income', 'Retirement Income Streams', addBtn('extraIncome', '+ Add income'),
         incomeTable(state, s),
         'Recurring income in retirement — pension, rental, business. Tick "tax" if it\'s taxable. Leave "To" blank for lifetime income.') +
+
+      withdrawalSection(s) +
 
       sectionCard('return', 'Investment Return by Age', addBtn('returnPhases', '+ Add phase'),
         returnPhaseTable(state, s),
@@ -382,22 +445,26 @@
   function renderScenarios(state) {
     var list = state.scenarios.length
       ? '<ul class="scen-list">' + state.scenarios.map(function (s) {
-          var active = s.id === state.editingId ? ' active' : '';
-          return '<li class="' + active.trim() + '"><span class="scen-name">' + esc(s.name) + '</span>' +
-            '<span class="scen-actions">' +
-              '<button class="btn small" data-action="edit-scenario" data-id="' + s.id + '">Edit</button>' +
-              '<button class="btn small" data-action="duplicate-scenario" data-id="' + s.id + '">Duplicate</button>' +
-              '<button class="btn small" data-action="rename-scenario" data-id="' + s.id + '">Rename</button>' +
-              '<button class="btn small danger" data-action="delete-scenario" data-id="' + s.id + '">Delete</button>' +
-            '</span></li>';
+          var open = s.id === state.editingId;
+          return '<li class="scen-item' + (open ? ' open' : '') + '">' +
+            '<div class="scen-row" data-action="toggle-edit" data-id="' + s.id + '" role="button" tabindex="0" aria-expanded="' + open + '">' +
+              '<span class="scen-caret" aria-hidden="true">' + (open ? '▾' : '▸') + '</span>' +
+              '<span class="scen-name">' + esc(s.name) + '</span>' +
+              '<span class="scen-actions">' +
+                '<button class="btn small" data-action="duplicate-scenario" data-id="' + s.id + '">Duplicate</button>' +
+                '<button class="btn small" data-action="rename-scenario" data-id="' + s.id + '">Rename</button>' +
+                '<button class="btn small danger" data-action="delete-scenario" data-id="' + s.id + '">Delete</button>' +
+              '</span>' +
+            '</div>' +
+            (open ? '<div class="scen-editor-inline">' + renderScenarioEditor(state, true) + '</div>' : '') +
+          '</li>';
         }).join('') + '</ul>'
       : '<p class="muted">No scenarios yet — create your first one.</p>';
 
     return '<div class="tab-pane">' +
       '<div class="bar"><button class="btn primary" data-action="add-scenario">+ New scenario</button>' +
-        '<span class="muted small">Tip: build one, then Duplicate it to compare different claiming ages or retirement dates.</span></div>' +
+        '<span class="muted small">Tip: click a scenario to open it. Build one, then Duplicate to compare different claiming ages or retirement dates.</span></div>' +
       list +
-      renderScenarioEditor(state) +
     '</div>';
   }
 
@@ -405,8 +472,8 @@
   // The "primary" scenario drives the big headline stats: first selected, else
   // the first scenario that exists.
   function primaryScenario(state) {
-    var sel = state.scenarios.filter(function (s) { return state.selectedScenarioIds.indexOf(s.id) >= 0; });
-    return sel[0] || state.scenarios[0] || null;
+    var f = state.scenarios.filter(function (s) { return s.id === state.focusedId; })[0];
+    return f || state.scenarios[0] || null;
   }
   // Average investment return for a scenario: mean of its return phases if it
   // has any, otherwise the single Settings return.
@@ -432,12 +499,14 @@
     var a = state.settings.assumptions || {};
     var age = s && s.retireAge !== '' && s.retireAge != null ? String(s.retireAge) : '—';
     var ret = oneDecimal(s ? avgReturn(state, s) : a.returnPct);
-    var startRaw = s && s.startingBalance !== '' && s.startingBalance != null
-      ? s.startingBalance : state.settings.currentSavings;
-    var start = (startRaw === '' || startRaw == null) ? '—' : shortMoney(num(startRaw));
+    // The Starting amount card edits the global current savings (Settings).
+    var startSettingRaw = state.settings.currentSavings;
+    var start = (startSettingRaw === '' || startSettingRaw == null) ? '—' : shortMoney(num(startSettingRaw));
 
     var proj = s ? global.RetEngine.projectScenario(s, state.settings, { now: state.now }) : null;
-    var bd = s ? global.RetEngine.incomeBreakdown(s, state.settings, { now: state.now }) : null;
+    var retAge = s ? (parseInt(s.retireAge, 10) || 65) : null;
+    var retRow = proj ? proj.yearByYear.filter(function (r) { return r.age === retAge; })[0] : null;
+    var bd = s ? global.RetEngine.incomeBreakdown(s, state.settings, { now: state.now, withdrawal: retRow ? retRow.withdrawalMonthly : null }) : null;
     var nestEgg = proj ? proj.summary.nestEggAtRetirement : null;
 
     return {
@@ -448,6 +517,7 @@
       ageVal: s && s.retireAge !== '' && s.retireAge != null ? num(s.retireAge) : 65,
       retVal: a.returnPct !== '' && a.returnPct != null ? num(a.returnPct) : 6,
       age: age, ret: ret, start: start,
+      startSettingRaw: (startSettingRaw == null ? '' : startSettingRaw),
       // projected outcomes (react to the retirement-age slider)
       balance: bd ? shortMoneyMM(nestEgg) : '—',
       monthly: bd ? fmtMoney(bd.monthlyIncome) : '—',
@@ -462,10 +532,9 @@
   // no orange on the numbers (including the dollar sign). The first two carry
   // a slider so you can dial them in and watch the chart move.
   function statHeader(d) {
-    function card(icon, label, key, valHtml, slider) {
+    function card(label, valHtml, slider) {
       return '<div class="stat-card">' +
-        '<div class="stat-top"><span class="stat-label">' + label + '</span>' +
-        '<span class="stat-ico" aria-hidden="true">' + icon + '</span></div>' +
+        '<div class="stat-top"><span class="stat-label">' + label + '</span></div>' +
         '<div class="stat-value">' + valHtml + '</div>' +
         (slider || '') + '</div>';
     }
@@ -473,22 +542,25 @@
       return '<span class="stat-num" data-stat-val="' + key + '">' + esc(text) + '</span>' +
         (unit ? '<span class="stat-unit">' + unit + '</span>' : '');
     }
-    // Retirement-age slider targets the primary scenario; return slider edits
-    // the shared Settings assumption (it feeds every scenario).
+    // Retirement-age slider targets the focused scenario; return slider edits
+    // the shared Settings assumption. Starting amount is an editable field that
+    // writes back to Settings (current savings).
     var ageSlider = d.hasScenario
       ? '<input type="range" class="stat-slider" min="50" max="75" step="1" value="' + d.ageVal +
         '" data-stat="retireAge" data-id="' + d.primaryId + '" aria-label="Target retirement age">'
       : '';
     var retSlider = '<input type="range" class="stat-slider" min="0" max="12" step="0.1" value="' + d.retVal +
       '" data-stat="returnPct" aria-label="Average return percent">';
+    var startVal = '<span class="stat-cur">$</span>' +
+      '<input type="number" class="stat-edit-input" data-stat="startBalance" min="0" step="1000" ' +
+      'value="' + esc(d.startSettingRaw) + '" aria-label="Starting amount (current savings)">';
 
     return '<div class="stat-head">' +
-      '<div class="stat-context">Showing <strong>' + esc(d.name) + '</strong>' +
-        (d.hasScenario ? '' : ' — create a scenario to see your numbers') + '</div>' +
+      (d.hasScenario ? '' : '<div class="stat-context">Create a scenario to see your numbers.</div>') +
       '<div class="stat-row">' +
-        card('▤', 'Target retirement age', 'retireAge', valNum('retireAge', d.age, 'years'), ageSlider) +
-        card('↗', 'Average return', 'returnPct', valNum('returnPct', d.ret, '%'), retSlider) +
-        card('▦', 'Starting amount', 'start', valNum('start', d.start, '')) +
+        card('Target retirement age', valNum('retireAge', d.age, 'years'), ageSlider) +
+        card('Average return', valNum('returnPct', d.ret, '%'), retSlider) +
+        card('Starting amount · editable', startVal) +
       '</div></div>';
   }
 
@@ -551,16 +623,20 @@
   // "Control panel" of scenario chips across the top — click to add/remove a
   // scenario from the comparison. Replaces the old checkbox picker and the
   // header search bar.
+  // Top strip of scenario pills. Click a pill to FOCUS that scenario (its
+  // numbers fill the dashboard); the focused one is highlighted. Pills are
+  // draggable to reorder and each carries a duplicate button.
   function scenarioBar(state) {
     if (!state.scenarios.length) {
       return '<div class="scenario-bar empty">' +
-        '<p class="muted small" style="margin:0">No scenarios yet. </p>' +
+        '<span class="muted small">No scenarios yet.</span>' +
         '<button class="scn-chip add" data-action="add-scenario">+ New scenario</button></div>';
     }
+    var focused = primaryScenario(state);
     var chips = state.scenarios.map(function (s, i) {
-      var on = state.selectedScenarioIds.indexOf(s.id) >= 0 ? ' on' : '';
+      var on = focused && s.id === focused.id ? ' on' : '';
       return '<div class="scn-chip' + on + '" draggable="true" data-index="' + i + '" data-id="' + s.id + '" title="Drag to reorder">' +
-        '<button class="scn-pick" data-action="chip-select" data-id="' + s.id + '" title="Toggle in comparison">' +
+        '<button class="scn-pick" data-action="focus-scenario" data-id="' + s.id + '" title="Show this scenario">' +
           '<span class="pill-dot" style="background:' + (s.color || '#888') + '"></span>' +
           '<span class="pill-name">' + esc(s.name) + '</span></button>' +
         '<button class="scn-copy" data-action="duplicate-scenario" data-id="' + s.id + '" title="Duplicate this scenario" aria-label="Duplicate ' + esc(s.name) + '">⧉</button>' +
@@ -630,17 +706,24 @@
 
   function renderDashboard(state) {
     var d = dashboardStats(state);
-    var selected = state.scenarios.filter(function (s) { return state.selectedScenarioIds.indexOf(s.id) >= 0; });
-    var table = selected.length ? buildCompareTable(state, selected)
-      : '<p class="muted">Pick one or more scenarios above to compare them.</p>';
+    var all = state.scenarios;
+    var table = all.length ? buildCompareTable(state, all)
+      : '<p class="muted">Create scenarios to compare them here.</p>';
 
-    return '<div class="tab-pane">' +
-      statHeader(d) +
-      resultRow(d) +
-      '<div class="bar"><p class="intro" style="margin:0">Pick the scenarios to compare side by side.</p>' +
-        dollarBasisToggle(state) + '</div>' +
-      scenarioBar(state) +
-      incomeBreakdownCard(d) +
+    // no-anim when expanded so the tab-pane has no transform (a transform would
+    // make the fullscreen chart's position:fixed size to this column, not the viewport).
+    return '<div class="tab-pane' + (state.chartExpanded ? ' no-anim' : '') + '">' +
+      '<div class="dash-top">' +
+        scenarioBar(state) +
+        '<div class="dash-top-actions">' +
+          dollarBasisToggle(state) +
+          '<button class="btn small ghost" data-action="print-plan" title="Print or save as PDF">⎙ Print / PDF</button>' +
+        '</div>' +
+      '</div>' +
+      '<div class="dash-grid">' +
+        '<div class="dash-cards">' + statHeader(d) + resultRow(d) + '</div>' +
+        incomeBreakdownCard(d) +
+      '</div>' +
       chartCard(state) +
       yearByYearCard(state, d) +
       '<div class="card">' + table + '</div>' +

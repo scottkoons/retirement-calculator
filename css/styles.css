@@ -398,6 +398,7 @@ input.grow { flex: 1; min-width: 150px; }
 .accent-lump    { --sec: #f59e0b; background: linear-gradient(180deg, color-mix(in srgb, #f59e0b 6%, var(--panel)), var(--panel) 60px); }
 .accent-income  { --sec: #10b981; background: linear-gradient(180deg, color-mix(in srgb, #10b981 6%, var(--panel)), var(--panel) 60px); }
 .accent-return  { --sec: #14b8a6; background: linear-gradient(180deg, color-mix(in srgb, #14b8a6 6%, var(--panel)), var(--panel) 60px); }
+.accent-withdraw{ --sec: #fb7185; background: linear-gradient(180deg, color-mix(in srgb, #fb7185 6%, var(--panel)), var(--panel) 60px); }
 
 .sub { border-top: 1px solid var(--line-soft); padding-top: 1.15rem; margin-top: 1.15rem; }
 .sub-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: .75rem; gap: 1rem; }
@@ -627,10 +628,33 @@ input.grow { flex: 1; min-width: 150px; }
 .dash-top-actions { display: flex; align-items: center; gap: .6rem; flex: 0 0 auto; }
 .dash-top-actions .basis-toggle { margin-left: 0; }
 
-/* Two-column dashboard area (chart beside income breakdown) */
-.dash-cols { display: grid; grid-template-columns: 1.55fr 1fr; gap: 1.2rem; align-items: start; margin-bottom: 1.2rem; }
-.dash-cols > .card { margin-bottom: 0; }
-@media (max-width: 1100px) { .dash-cols { grid-template-columns: 1fr; } }
+/* Top dashboard area: stat + result cards on the left, income breakdown right */
+.dash-grid { display: grid; grid-template-columns: 1.5fr 1fr; gap: 1.2rem; align-items: start; margin-bottom: 1.2rem; }
+.dash-grid > .card { margin-bottom: 0; }
+.dash-cards { display: flex; flex-direction: column; gap: 1.1rem; min-width: 0; }
+.dash-cards .stat-head, .dash-cards .result-row { margin-bottom: 0; }
+/* Compact the cards a little since they now share the row with the breakdown */
+.dash-cards .stat-card { padding: 1rem 1.1rem 1.1rem; }
+.dash-cards .stat-value { font-size: 2rem; }
+.dash-cards .stat-slider { margin: .8rem 0 .1rem; }
+.dash-cards .result-card { padding: .95rem 1.1rem 1rem; }
+.dash-cards .result-card .stat-value { font-size: 1.7rem; margin-top: .55rem; }
+@media (max-width: 1100px) { .dash-grid { grid-template-columns: 1fr; } }
+@media (max-width: 680px) { .dash-cards .stat-row, .dash-cards .result-row { grid-template-columns: 1fr; } }
+
+/* Editable starting-amount field (writes back to Settings) */
+.stat-cur { font-family: var(--display); font-weight: 700; font-size: 1.3rem; color: var(--ink-soft); }
+.stat-edit-input {
+  flex: 1 1 auto; min-width: 0; width: auto;
+  font-family: var(--display); font-weight: 700; font-size: 2rem; line-height: 1;
+  letter-spacing: -.02em; color: var(--ink); background: transparent;
+  border: none; border-bottom: 1px dashed var(--line-strong); padding: 0 0 .1rem;
+  font-variant-numeric: tabular-nums; -moz-appearance: textfield;
+}
+.stat-edit-input:hover { border-bottom-color: var(--cyan); }
+.stat-edit-input:focus { outline: none; border-bottom-color: var(--cyan); }
+.stat-edit-input::-webkit-outer-spin-button,
+.stat-edit-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 
 /* Scenario focus pills */
 .scenario-bar { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; flex: 1 1 auto; min-width: 0; }

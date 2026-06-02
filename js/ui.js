@@ -324,6 +324,39 @@
     return '<button class="btn small" data-action="add-row" data-list="' + list + '">' + esc(label) + '</button>';
   }
 
+  // How the portfolio is drawn down in retirement. Default "spending" keeps the
+  // existing behavior; the other types model rules like the 4% rule.
+  function withdrawalSection(s) {
+    var w = s.withdrawal || {};
+    var type = w.type || 'spending';
+    var types = [['spending', 'Cover my spending target'], ['none', 'No withdrawal'],
+      ['interest', 'Interest only'], ['percent', 'Percentage of balance'], ['fixed', 'Fixed monthly amount']];
+    var opts = types.map(function (t) {
+      return '<option value="' + t[0] + '"' + (type === t[0] ? ' selected' : '') + '>' + t[1] + '</option>';
+    }).join('');
+    var extra = '';
+    if (type === 'percent') extra = '<div class="field"><label>Withdrawal rate (annual)</label>' +
+      numInput('scenario', 'withdrawal.ratePct', w.ratePct == null ? 4 : w.ratePct, '%', 'pct') + '</div>';
+    else if (type === 'fixed') extra = '<div class="field"><label>Monthly amount (today\'s $)</label>' +
+      moneyInput('scenario', 'withdrawal.amount', w.amount, '$/mo') + '</div>';
+    var taxField = (type === 'none') ? '' :
+      '<div class="field"><label>Tax status</label><label class="chk pick"><input type="checkbox" ' +
+        'data-scope="scenario" data-path="withdrawal.taxable"' + (w.taxable !== false ? ' checked' : '') +
+        '> Withdrawals are taxable</label></div>';
+    var hints = {
+      spending: 'Withdraws just enough to cover your spending target after guaranteed income — the default.',
+      none: 'Live only on guaranteed income (Social Security, VA, pensions); the portfolio is left to grow.',
+      interest: 'Withdraw only each month\'s investment growth, preserving the principal.',
+      percent: 'Withdraw a fixed percentage of the balance each year — the classic 4% rule.',
+      fixed: 'Withdraw a fixed dollar amount each month (grown with inflation).'
+    };
+    return sectionCard('withdraw', 'Withdrawal Strategy', '',
+      '<div class="grid3">' +
+        '<div class="field"><label>Type</label><select data-scope="scenario" data-path="withdrawal.type">' + opts + '</select></div>' +
+        extra + taxField +
+      '</div>', hints[type]);
+  }
+
   function renderScenarioEditor(state, inline) {
     var s = state.scenarios.filter(function (x) { return x.id === state.editingId; })[0];
     if (!s) return '';
@@ -354,6 +387,8 @@
       sectionCard('income', 'Retirement Income Streams', addBtn('extraIncome', '+ Add income'),
         incomeTable(state, s),
         'Recurring income in retirement — pension, rental, business. Tick "tax" if it\'s taxable. Leave "To" blank for lifetime income.') +
+
+      withdrawalSection(s) +
 
       sectionCard('return', 'Investment Return by Age', addBtn('returnPhases', '+ Add phase'),
         returnPhaseTable(state, s),
@@ -439,12 +474,14 @@
     var a = state.settings.assumptions || {};
     var age = s && s.retireAge !== '' && s.retireAge != null ? String(s.retireAge) : '—';
     var ret = oneDecimal(s ? avgReturn(state, s) : a.returnPct);
-    var startRaw = s && s.startingBalance !== '' && s.startingBalance != null
-      ? s.startingBalance : state.settings.currentSavings;
-    var start = (startRaw === '' || startRaw == null) ? '—' : shortMoney(num(startRaw));
+    // The Starting amount card edits the global current savings (Settings).
+    var startSettingRaw = state.settings.currentSavings;
+    var start = (startSettingRaw === '' || startSettingRaw == null) ? '—' : shortMoney(num(startSettingRaw));
 
     var proj = s ? global.RetEngine.projectScenario(s, state.settings, { now: state.now }) : null;
-    var bd = s ? global.RetEngine.incomeBreakdown(s, state.settings, { now: state.now }) : null;
+    var retAge = s ? (parseInt(s.retireAge, 10) || 65) : null;
+    var retRow = proj ? proj.yearByYear.filter(function (r) { return r.age === retAge; })[0] : null;
+    var bd = s ? global.RetEngine.incomeBreakdown(s, state.settings, { now: state.now, withdrawal: retRow ? retRow.withdrawalMonthly : null }) : null;
     var nestEgg = proj ? proj.summary.nestEggAtRetirement : null;
 
     return {
@@ -455,6 +492,7 @@
       ageVal: s && s.retireAge !== '' && s.retireAge != null ? num(s.retireAge) : 65,
       retVal: a.returnPct !== '' && a.returnPct != null ? num(a.returnPct) : 6,
       age: age, ret: ret, start: start,
+      startSettingRaw: (startSettingRaw == null ? '' : startSettingRaw),
       // projected outcomes (react to the retirement-age slider)
       balance: bd ? shortMoneyMM(nestEgg) : '—',
       monthly: bd ? fmtMoney(bd.monthlyIncome) : '—',
@@ -469,10 +507,9 @@
   // no orange on the numbers (including the dollar sign). The first two carry
   // a slider so you can dial them in and watch the chart move.
   function statHeader(d) {
-    function card(icon, label, key, valHtml, slider) {
+    function card(label, valHtml, slider) {
       return '<div class="stat-card">' +
-        '<div class="stat-top"><span class="stat-label">' + label + '</span>' +
-        '<span class="stat-ico" aria-hidden="true">' + icon + '</span></div>' +
+        '<div class="stat-top"><span class="stat-label">' + label + '</span></div>' +
         '<div class="stat-value">' + valHtml + '</div>' +
         (slider || '') + '</div>';
     }
@@ -480,21 +517,25 @@
       return '<span class="stat-num" data-stat-val="' + key + '">' + esc(text) + '</span>' +
         (unit ? '<span class="stat-unit">' + unit + '</span>' : '');
     }
-    // Retirement-age slider targets the primary scenario; return slider edits
-    // the shared Settings assumption (it feeds every scenario).
+    // Retirement-age slider targets the focused scenario; return slider edits
+    // the shared Settings assumption. Starting amount is an editable field that
+    // writes back to Settings (current savings).
     var ageSlider = d.hasScenario
       ? '<input type="range" class="stat-slider" min="50" max="75" step="1" value="' + d.ageVal +
         '" data-stat="retireAge" data-id="' + d.primaryId + '" aria-label="Target retirement age">'
       : '';
     var retSlider = '<input type="range" class="stat-slider" min="0" max="12" step="0.1" value="' + d.retVal +
       '" data-stat="returnPct" aria-label="Average return percent">';
+    var startVal = '<span class="stat-cur">$</span>' +
+      '<input type="number" class="stat-edit-input" data-stat="startBalance" min="0" step="1000" ' +
+      'value="' + esc(d.startSettingRaw) + '" aria-label="Starting amount (current savings)">';
 
     return '<div class="stat-head">' +
       (d.hasScenario ? '' : '<div class="stat-context">Create a scenario to see your numbers.</div>') +
       '<div class="stat-row">' +
-        card('▤', 'Target retirement age', 'retireAge', valNum('retireAge', d.age, 'years'), ageSlider) +
-        card('↗', 'Average return', 'returnPct', valNum('returnPct', d.ret, '%'), retSlider) +
-        card('▦', 'Starting amount', 'start', valNum('start', d.start, '')) +
+        card('Target retirement age', valNum('retireAge', d.age, 'years'), ageSlider) +
+        card('Average return', valNum('returnPct', d.ret, '%'), retSlider) +
+        card('Starting amount · editable', startVal) +
       '</div></div>';
   }
 
@@ -654,12 +695,11 @@
           '<button class="btn small ghost" data-action="print-plan" title="Print or save as PDF">⎙ Print / PDF</button>' +
         '</div>' +
       '</div>' +
-      statHeader(d) +
-      resultRow(d) +
-      '<div class="dash-cols">' +
-        chartCard(state) +
+      '<div class="dash-grid">' +
+        '<div class="dash-cards">' + statHeader(d) + resultRow(d) + '</div>' +
         incomeBreakdownCard(d) +
       '</div>' +
+      chartCard(state) +
       yearByYearCard(state, d) +
       '<div class="card">' + table + '</div>' +
     '</div>';

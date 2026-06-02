@@ -239,6 +239,7 @@
       retireAge: 65,
       claimAgeA: 67, claimAgeB: 67,
       retirementSpending: '',
+      withdrawal: { type: 'spending', ratePct: 4, amount: '', taxable: true },
       contributionPeriods: [],
       lumpSums: [],
       extraIncome: []
@@ -291,12 +292,15 @@
     var val = t.value;
     if (t.dataset.stat === 'returnPct') {
       setByPath(state, 'settings.assumptions.returnPct', val);
+    } else if (t.dataset.stat === 'startBalance') {
+      setByPath(state, 'settings.currentSavings', val);
     } else if (t.dataset.stat === 'retireAge') {
       var sc = state.scenarios.filter(function (x) { return x.id === t.dataset.id; })[0];
       if (sc) sc.retireAge = val;
     }
     persist();
-    if (e.type === 'change') { render(); return; }
+    // Don't full-render the starting-amount field while typing (keeps focus).
+    if (e.type === 'change' && t.dataset.stat !== 'startBalance') { render(); return; }
     updateStatNumbers();
     if (state.activeTab === 'dashboard') drawChart();
   }
@@ -349,6 +353,9 @@
       var s = editingScenario();
       if (!s) return;
       setByPath(s, t.dataset.path, value);
+
+      // Changing the withdrawal strategy type swaps which fields are shown.
+      if (t.dataset.path === 'withdrawal.type') { persist(); rerenderEditor(); return; }
 
       // When a contribution period's Start/End is committed, reshape the timeline
       // so periods never overlap. Only re-render if the clamp actually changed

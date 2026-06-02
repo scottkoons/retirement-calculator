@@ -225,24 +225,23 @@
       } else {
         var ssA = ssIncome(personA, num(scenario.claimAgeA, retireAge), absM, nowAbs, ssColaPct);
         var ssB = ssIncome(personB, num(scenario.claimAgeB, retireAge), absM, nowAbs, ssColaPct);
-        // VA disability rises by the same legally-mandated COLA as Social Security.
-        var vaInc = has(va.monthly) ? inflate(num(va.monthly), ssColaPct, absM - nowAbs) : 0;
-        incomeGross += ssA + ssB + vaInc;
-        incomeTaxable += ssA + ssB; // SS counted taxable (simplified); VA is tax-free
+        incomeGross += ssA + ssB;
+        incomeTaxable += ssA + ssB; // SS counted taxable (simplified)
 
-        (scenario.extraIncome || []).forEach(function (e) {
-          if (!has(e.startYear)) return;
-          var sAbs = toAbs(num(e.startMonth, now.month), num(e.startYear));
-          var eAbs = has(e.endYear) ? toAbs(num(e.endMonth, 12), num(e.endYear)) : Infinity;
-          if (absM >= sAbs && absM <= eAbs) {
-            var amt = inflate(num(e.monthly), num(e.colaPct, 0), absM - nowAbs);
-            incomeGross += amt;
-            if (e.taxable) incomeTaxable += amt;
+        // Global income sources (VA, pension, rental…): today's $ grown by each
+        // source's own COLA, active from its start age (blank = from retirement).
+        (settings.incomeSources || []).forEach(function (src) {
+          var startAbs = has(src.startAge) ? birthAbsA + num(src.startAge) * 12 : retireAbs;
+          if (absM >= startAbs) {
+            var amt = inflate(num(src.monthly), num(src.colaPct, 0), absM - nowAbs);
+            if (amt) { incomeGross += amt; if (src.taxable) incomeTaxable += amt; }
           }
         });
 
         var taxGuar = incomeTaxable * taxPct / 100;
-        var wType = (scenario.withdrawal && scenario.withdrawal.type) || 'spending';
+        // Withdrawal strategy is global (same rule across scenarios).
+        var wcfg = settings.withdrawal || {};
+        var wType = wcfg.type || 'spending';
         var mFromNow = absM - nowAbs;
         if (wType === 'spending') {
           // Default model: fund a spending target. Guaranteed income flows in,
@@ -254,7 +253,7 @@
         } else {
           // Rule-based withdrawal: the portfolio is drawn by the rule; guaranteed
           // income is spent outside it. Income you live on = guaranteed + withdrawal.
-          var wr = scenario.withdrawal || {};
+          var wr = wcfg;
           var wd = 0;
           if (wType === 'interest') wd = Math.max(0, growthThisMonth);
           else if (wType === 'percent') wd = Math.max(0, balance) * (num(wr.ratePct, 4) / 100) / 12;
@@ -359,29 +358,25 @@
     var atAbs = birthAbsA + retireAge * 12;
     if (atAbs < nowAbs) atAbs = nowAbs;       // already retired → measure at now
     var months = atAbs - nowAbs;
-    var va = settings.vaDisability || {};
 
     var sources = [], guaranteed = 0;
 
-    (scenario.extraIncome || []).forEach(function (e) {
-      if (!has(e.startYear)) return;
-      var sAbs = toAbs(num(e.startMonth, now.month), num(e.startYear));
-      var eAbs = has(e.endYear) ? toAbs(num(e.endMonth, 12), num(e.endYear)) : Infinity;
-      if (atAbs >= sAbs && atAbs <= eAbs) {
-        var amt = inflate(num(e.monthly), num(e.colaPct, 0), months);
-        if (amt > 0) { sources.push({ key: 'extra', label: e.label || 'Other income', amount: amt, taxable: !!e.taxable }); guaranteed += amt; }
+    // Global income sources (VA, pension, rental…), projected to retirement.
+    (settings.incomeSources || []).forEach(function (src, i) {
+      var startAbs = has(src.startAge) ? birthAbsA + num(src.startAge) * 12 : atAbs;
+      if (atAbs >= startAbs) {
+        var amt = inflate(num(src.monthly), num(src.colaPct, 0), months);
+        if (amt > 0) { sources.push({ key: 'src', srcIndex: i, label: src.label || 'Income', amount: amt, taxable: !!src.taxable, removable: true }); guaranteed += amt; }
       }
     });
     var ssA = ssIncome(personA, num(scenario.claimAgeA, retireAge), atAbs, nowAbs, ssColaPct);
     var ssB = ssIncome(personB, num(scenario.claimAgeB, retireAge), atAbs, nowAbs, ssColaPct);
-    var vaInc = has(va.monthly) ? inflate(num(va.monthly), ssColaPct, months) : 0;
     if (ssA > 0) { sources.push({ key: 'ssA', label: 'Social Security' + (personA.name ? ' (' + personA.name + ')' : ' (You)'), amount: ssA, taxable: true }); guaranteed += ssA; }
     if (ssB > 0) { sources.push({ key: 'ssB', label: 'Social Security' + (personB.name ? ' (' + personB.name + ')' : ' (Spouse)'), amount: ssB, taxable: true }); guaranteed += ssB; }
-    if (vaInc > 0) { sources.push({ key: 'va', label: 'VA Benefits', amount: vaInc, taxable: false }); guaranteed += vaInc; }
 
     // Withdrawal: use the projection's value when given (reflects the chosen
     // strategy); otherwise fall back to the spending-gap default.
-    var wTaxable = !scenario.withdrawal || scenario.withdrawal.taxable !== false;
+    var wTaxable = !settings.withdrawal || settings.withdrawal.taxable !== false;
     var withdrawal;
     if (opts.withdrawal != null) {
       withdrawal = Math.max(0, num(opts.withdrawal));
@@ -398,7 +393,7 @@
 
     return {
       age: retireAge,
-      sources: sources.map(function (s) { return { key: s.key, label: s.label, amount: Math.round(s.amount), taxable: s.taxable }; }),
+      sources: sources.map(function (s) { return { key: s.key, srcIndex: s.srcIndex, removable: !!s.removable, label: s.label, amount: Math.round(s.amount), taxable: s.taxable }; }),
       monthlyIncome: Math.round(monthlyIncome),
       annualIncome: Math.round(monthlyIncome * 12),
       taxableMonthly: Math.round(taxable),

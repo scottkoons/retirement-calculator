@@ -7,3 +7,8 @@ Thumbs.db
 
 # Personal backups exported from the app
 retirement-backup-*.json
+
+# Node tooling (screenshots/tests only; this is a no-build project)
+node_modules/
+package.json
+package-lock.json

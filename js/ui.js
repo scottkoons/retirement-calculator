@@ -86,15 +86,11 @@
 
   function renderSettings(state) {
     var s = state.settings;
-    var va = s.vaDisability || {};
     var a = s.assumptions || {};
     return '<div class="tab-pane">' +
       '<p class="intro">Your profile and assumptions. These feed every scenario. Everything saves automatically.</p>' +
       '<div class="grid2">' + personFields('personA', s.personA || {}) + personFields('personB', s.personB || {}) + '</div>' +
-      '<div class="card"><h3>Other income &amp; savings</h3>' +
-        '<div class="field inline"><label>VA disability (today\'s $, tax-free, monthly)</label>' +
-          moneyInput('settings', 'settings.vaDisability.monthly', va.monthly, '$/mo') +
-          '<span class="lbl">rises with SS COLA</span></div>' +
+      '<div class="card"><h3>Current savings</h3>' +
         '<div class="field inline"><label>Current total savings / investments</label>' +
           moneyInput('settings', 'settings.currentSavings', s.currentSavings, '$') + '</div>' +
       '</div>' +
@@ -103,8 +99,33 @@
         '<div class="field"><label>Inflation %</label>' + numInput('settings', 'settings.assumptions.inflationPct', a.inflationPct, '%', 'pct') + '</div>' +
         '<div class="field"><label>Social Security COLA %</label>' + numInput('settings', 'settings.assumptions.ssColaPct', a.ssColaPct, '%', 'pct') + '</div>' +
         '<div class="field"><label>Effective tax rate %</label>' + numInput('settings', 'settings.assumptions.effectiveTaxPct', a.effectiveTaxPct, '%', 'pct') + '</div>' +
-      '</div><p class="muted small">Tax applies to Social Security and any income you mark taxable. VA disability is always tax-free.</p></div>' +
+      '</div><p class="muted small">Tax applies to Social Security and any income you mark taxable.</p></div>' +
+      incomeSourcesCard(s.incomeSources || []) +
       returnThrottleCard(s.returnThrottle || {}) +
+    '</div>';
+  }
+
+  // Global income sources (VA, pension, rental, annuity…) — guaranteed income
+  // other than Social Security. Today's $ grown by each source's COLA to
+  // retirement. Shared across all scenarios.
+  function incomeSourcesCard(list) {
+    var head = '<div class="isrc-row isrc-head">' +
+      '<span>Source</span><span>Monthly $ (today)</span><span>COLA %</span><span>Start age</span><span>Tax</span><span></span></div>';
+    var rows = (list || []).map(function (src, i) {
+      var b = 'settings.incomeSources.' + i + '.';
+      return '<div class="isrc-row">' +
+        textInput('settings', b + 'label', src.label, 'e.g. VA Benefits, Pension', 'grow') +
+        moneyInput('settings', b + 'monthly', src.monthly, '$/mo today') +
+        numInput('settings', b + 'colaPct', src.colaPct == null ? 2.5 : src.colaPct, '%', 'pct') +
+        numInput('settings', b + 'startAge', src.startAge, 'retire', 'yr') +
+        '<label class="chk isrc-tax"><input type="checkbox" data-scope="settings" data-path="' + b + 'taxable"' + (src.taxable ? ' checked' : '') + '> tax</label>' +
+        '<button class="btn-x" data-action="remove-income-source" data-index="' + i + '">✕</button>' +
+      '</div>';
+    }).join('');
+    return '<div class="card"><div class="ib-cardhead"><h3>Income sources</h3>' +
+      '<button class="btn small" data-action="add-income-source">+ Add income source</button></div>' +
+      '<p class="muted small">Guaranteed income other than Social Security — VA, pension, rental, annuity. Enter today\'s monthly amount and a COLA; each grows to retirement. Shared across all scenarios. Leave Start age blank to begin at retirement.</p>' +
+      (list && list.length ? head + rows : '<p class="muted small" style="margin:0">No income sources yet — add VA, a pension, or other recurring income.</p>') +
     '</div>';
   }
 
@@ -349,37 +370,45 @@
     return '<button class="btn small" data-action="add-row" data-list="' + list + '">' + esc(label) + '</button>';
   }
 
-  // How the portfolio is drawn down in retirement. Default "spending" keeps the
-  // existing behavior; the other types model rules like the 4% rule.
-  function withdrawalSection(s) {
-    var w = s.withdrawal || {};
+  // Global withdrawal strategy control for the dashboard (the same rule applies
+  // to every scenario so comparisons are apples-to-apples). Lives under the
+  // stat/result cards, left of the income breakdown.
+  function withdrawalControl(state) {
+    var w = (state.settings && state.settings.withdrawal) || {};
     var type = w.type || 'spending';
-    var types = [['spending', 'Cover my spending target'], ['none', 'No withdrawal'],
+    var types = [['spending', 'Cover spending target'], ['none', 'No withdrawal'],
       ['interest', 'Interest only'], ['percent', 'Percentage of balance'], ['fixed', 'Fixed monthly amount']];
     var opts = types.map(function (t) {
       return '<option value="' + t[0] + '"' + (type === t[0] ? ' selected' : '') + '>' + t[1] + '</option>';
     }).join('');
-    var extra = '';
-    if (type === 'percent') extra = '<div class="field"><label>Withdrawal rate (annual)</label>' +
-      numInput('scenario', 'withdrawal.ratePct', w.ratePct == null ? 4 : w.ratePct, '%', 'pct') + '</div>';
-    else if (type === 'fixed') extra = '<div class="field"><label>Monthly amount (today\'s $)</label>' +
-      moneyInput('scenario', 'withdrawal.amount', w.amount, '$/mo') + '</div>';
-    var taxField = (type === 'none') ? '' :
-      '<div class="field"><label>Tax status</label><label class="chk pick"><input type="checkbox" ' +
-        'data-scope="scenario" data-path="withdrawal.taxable"' + (w.taxable !== false ? ' checked' : '') +
-        '> Withdrawals are taxable</label></div>';
+    var control = '';
+    if (type === 'percent') {
+      var rate = w.ratePct == null ? 4 : w.ratePct;
+      control = '<div class="wc-slider">' +
+        '<div class="wc-sliderlabel">Annual rate <span class="wc-rateval" data-stat-val="wdRate">' + oneDecimal(rate) + '%</span></div>' +
+        '<input type="range" class="stat-slider" min="0" max="10" step="0.1" value="' + rate + '" data-stat="wdRate" aria-label="Withdrawal rate percent"></div>';
+    } else if (type === 'fixed') {
+      control = '<div class="wc-slider"><div class="wc-sliderlabel">Monthly amount (today\'s $)</div>' +
+        '<input type="number" class="stat-edit-input wc-amt" min="0" step="100" value="' + esc(w.amount == null ? '' : w.amount) + '" data-stat="wdAmount" aria-label="Fixed monthly withdrawal"></div>';
+    }
     var hints = {
-      spending: 'Withdraws just enough to cover your spending target after guaranteed income — the default.',
+      spending: 'Withdraws just enough to cover each scenario\'s spending target after guaranteed income.',
       none: 'Live only on guaranteed income (Social Security, VA, pensions); the portfolio is left to grow.',
       interest: 'Withdraw only each month\'s investment growth, preserving the principal.',
-      percent: 'Withdraw a fixed percentage of the balance each year — the classic 4% rule.',
+      percent: 'Withdraw this % of the balance each year — the classic 4% rule.',
       fixed: 'Withdraw a fixed dollar amount each month (grown with inflation).'
     };
-    return sectionCard('withdraw', 'Withdrawal Strategy', '',
-      '<div class="grid3">' +
-        '<div class="field"><label>Type</label><select data-scope="scenario" data-path="withdrawal.type">' + opts + '</select></div>' +
-        extra + taxField +
-      '</div>', hints[type]);
+    var tax = (type === 'none' || type === 'spending') ? '' :
+      '<label class="chk pick wc-tax"><input type="checkbox" data-scope="settings" data-path="settings.withdrawal.taxable"' +
+        (w.taxable !== false ? ' checked' : '') + '> Taxable</label>';
+    return '<div class="card wc-card">' +
+      '<div class="stat-top"><span class="stat-label">Withdrawal strategy · all scenarios</span></div>' +
+      '<div class="wc-row">' +
+        '<select class="wc-type" data-scope="settings" data-path="settings.withdrawal.type">' + opts + '</select>' +
+        control + tax +
+      '</div>' +
+      '<p class="muted small wc-hint">' + hints[type] + '</p>' +
+    '</div>';
   }
 
   function renderScenarioEditor(state, inline) {
@@ -408,12 +437,6 @@
       sectionCard('lump', 'Lump Sum Events', addBtn('lumpSums', '+ Add lump sum'),
         lumpTable(state, s),
         'One-time deposits (inheritance, business sale). Use a negative amount for a one-time withdrawal.') +
-
-      sectionCard('income', 'Retirement Income Streams', addBtn('extraIncome', '+ Add income'),
-        incomeTable(state, s),
-        'Recurring income in retirement — pension, rental, business. Tick "tax" if it\'s taxable. Leave "To" blank for lifetime income.') +
-
-      withdrawalSection(s) +
 
       sectionCard('return', 'Investment Return by Age', addBtn('returnPhases', '+ Add phase'),
         returnPhaseTable(state, s),
@@ -518,6 +541,7 @@
       retVal: a.returnPct !== '' && a.returnPct != null ? num(a.returnPct) : 6,
       age: age, ret: ret, start: start,
       startSettingRaw: (startSettingRaw == null ? '' : startSettingRaw),
+      wdRate: oneDecimal((state.settings.withdrawal || {}).ratePct == null ? 4 : state.settings.withdrawal.ratePct) + '%',
       // projected outcomes (react to the retirement-age slider)
       balance: bd ? shortMoneyMM(nestEgg) : '—',
       monthly: bd ? fmtMoney(bd.monthlyIncome) : '—',
@@ -591,27 +615,32 @@
         '<p class="muted small" style="margin:0">Add a scenario with spending, Social Security, VA, or other income to see where your retirement income comes from.</p></div>';
     }
     var bd = d.breakdown;
-    var SRC_COLORS = { withdrawal: '#8b5cf6', va: '#ec4899', ssA: '#10b981', ssB: '#fbbf24', extra: '#0891b2' };
+    var SRC_COLORS = { withdrawal: '#8b5cf6', ssA: '#10b981', ssB: '#fbbf24' };
+    var SRC_PALETTE = ['#ec4899', '#0891b2', '#f59e0b', '#a855f7', '#14b8a6', '#ef4444'];
     var max = bd.sources.reduce(function (m, s) { return Math.max(m, s.amount); }, 0) || 1;
     var rows = bd.sources.length
       ? bd.sources.map(function (s) {
-          var color = SRC_COLORS[s.key] || '#0891b2';
+          var color = SRC_COLORS[s.key] || (s.srcIndex != null ? SRC_PALETTE[s.srcIndex % SRC_PALETTE.length] : '#0891b2');
           var pct = Math.max(2, Math.round((s.amount / max) * 100));
           var badge = s.taxable
             ? '<span class="tax-badge tax">Tax</span>'
             : '<span class="tax-badge free">Tax-free</span>';
+          var rm = s.removable
+            ? '<button class="ib-x" data-action="remove-income-source" data-index="' + s.srcIndex + '" title="Remove this income source">✕</button>'
+            : '';
           return '<div class="ib-row">' +
             '<div class="ib-head">' +
-              '<span class="ib-name"><span class="ib-dot" style="background:' + color + '"></span>' + esc(s.label) + ' ' + badge + '</span>' +
+              '<span class="ib-name"><span class="ib-dot" style="background:' + color + '"></span>' + esc(s.label) + ' ' + badge + rm + '</span>' +
               '<span class="ib-amt mono">' + fmtMoney(s.amount) + '</span>' +
             '</div>' +
             '<div class="ib-track"><span class="ib-fill" style="width:' + pct + '%;background:' + color + '"></span></div>' +
           '</div>';
         }).join('')
-      : '<p class="muted small" style="margin:0">No income at this age yet — adjust spending, claiming ages, or income streams.</p>';
+      : '<p class="muted small" style="margin:0">No income at this age yet — adjust spending, claiming ages, or income.</p>';
 
     return '<div class="card income-card">' +
-      '<h3>Income breakdown <span class="ib-sub">at age ' + esc(String(bd.age)) + ' · ' + esc(d.name) + '</span></h3>' +
+      '<div class="ib-cardhead"><h3>Income breakdown <span class="ib-sub">at age ' + esc(String(bd.age)) + ' · ' + esc(d.name) + '</span></h3>' +
+        '<button class="btn small ghost" data-action="add-income-source" title="Add an income source (VA, pension, rental…)">+ Add income</button></div>' +
       '<div class="ib-list">' + rows + '</div>' +
       '<div class="ib-totals">' +
         '<div class="ib-total taxable"><span class="ib-total-lbl">Taxable / mo</span><span class="ib-total-val mono">' + fmtMoney(bd.taxableMonthly) + '</span></div>' +
@@ -633,10 +662,13 @@
         '<button class="scn-chip add" data-action="add-scenario">+ New scenario</button></div>';
     }
     var focused = primaryScenario(state);
+    var cmp = !!state.compareMode;
+    var compareIds = state.compareIds || [];
     var chips = state.scenarios.map(function (s, i) {
-      var on = focused && s.id === focused.id ? ' on' : '';
+      var on = (cmp ? compareIds.indexOf(s.id) >= 0 : (focused && s.id === focused.id)) ? ' on' : '';
+      var act = cmp ? 'toggle-compare' : 'focus-scenario';
       return '<div class="scn-chip' + on + '" draggable="true" data-index="' + i + '" data-id="' + s.id + '" title="Drag to reorder">' +
-        '<button class="scn-pick" data-action="focus-scenario" data-id="' + s.id + '" title="Show this scenario">' +
+        '<button class="scn-pick" data-action="' + act + '" data-id="' + s.id + '" title="' + (cmp ? 'Add/remove from chart' : 'Show this scenario') + '">' +
           '<span class="pill-dot" style="background:' + (s.color || '#888') + '"></span>' +
           '<span class="pill-name">' + esc(s.name) + '</span></button>' +
         '<button class="scn-copy" data-action="duplicate-scenario" data-id="' + s.id + '" title="Duplicate this scenario" aria-label="Duplicate ' + esc(s.name) + '">⧉</button>' +
@@ -716,12 +748,15 @@
       '<div class="dash-top">' +
         scenarioBar(state) +
         '<div class="dash-top-actions">' +
+          '<button class="btn small ghost compare-btn' + (state.compareMode ? ' on' : '') + '" data-action="toggle-compare-mode" title="Overlay multiple scenarios on the chart">' +
+            (state.compareMode ? '✓ Comparing' : '⇄ Compare') + '</button>' +
           dollarBasisToggle(state) +
           '<button class="btn small ghost" data-action="print-plan" title="Print or save as PDF">⎙ Print / PDF</button>' +
         '</div>' +
       '</div>' +
+      (state.compareMode ? '<p class="muted small compare-note">Compare mode — click scenarios above to add or remove them from the chart.</p>' : '') +
       '<div class="dash-grid">' +
-        '<div class="dash-cards">' + statHeader(d) + resultRow(d) + '</div>' +
+        '<div class="dash-cards">' + statHeader(d) + resultRow(d) + withdrawalControl(state) + '</div>' +
         incomeBreakdownCard(d) +
       '</div>' +
       chartCard(state) +

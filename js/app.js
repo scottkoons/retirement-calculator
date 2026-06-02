@@ -72,6 +72,7 @@
   function render() {
     ensureScenarioColors();
     ensureFocus();
+    if (!state.compareIds) state.compareIds = [];
     document.querySelectorAll('.tab-btn').forEach(function (b) {
       b.classList.toggle('active', b.dataset.tab === state.activeTab);
     });
@@ -110,10 +111,17 @@
         'Your numbers and comparisons above still work offline.</div>';
       return;
     }
-    var all = state.scenarios;
+    var allScen = state.scenarios;
     if (chart) { chart.destroy(); chart = null; }
-    if (!all.length) return;
-    var focused = all.filter(function (s) { return s.id === state.focusedId; })[0] || all[0];
+    if (!allScen.length) return;
+    var focused = allScen.filter(function (s) { return s.id === state.focusedId; })[0] || allScen[0];
+    // Default chart shows only the focused scenario; compare mode overlays the
+    // chosen set.
+    var setIds = state.compareMode
+      ? ((state.compareIds && state.compareIds.length) ? state.compareIds : [focused.id])
+      : [focused.id];
+    var all = allScen.filter(function (s) { return setIds.indexOf(s.id) >= 0; });
+    if (!all.length) all = [focused];
 
     // Soft top-down gradient under the FOCUSED line, fading to transparent — the
     // "shaded area" look. Other scenarios draw as plain lines for context.
@@ -152,6 +160,7 @@
     // Lump-sum event markers for the focused scenario — dots on the line, with
     // details on hover.
     (function () {
+      if (!projById[focused.id]) return;
       var yb = projById[focused.id].yearByYear;
       var pa = state.settings.personA || {};
       var birthAbs = pa.birthYear ? pa.birthYear * 12 + ((pa.birthMonth || 1) - 1) : null;
@@ -239,7 +248,6 @@
       retireAge: 65,
       claimAgeA: 67, claimAgeB: 67,
       retirementSpending: '',
-      withdrawal: { type: 'spending', ratePct: 4, amount: '', taxable: true },
       contributionPeriods: [],
       lumpSums: [],
       extraIncome: []
@@ -294,13 +302,18 @@
       setByPath(state, 'settings.assumptions.returnPct', val);
     } else if (t.dataset.stat === 'startBalance') {
       setByPath(state, 'settings.currentSavings', val);
+    } else if (t.dataset.stat === 'wdRate') {
+      setByPath(state, 'settings.withdrawal.ratePct', val);
+    } else if (t.dataset.stat === 'wdAmount') {
+      setByPath(state, 'settings.withdrawal.amount', val);
     } else if (t.dataset.stat === 'retireAge') {
       var sc = state.scenarios.filter(function (x) { return x.id === t.dataset.id; })[0];
       if (sc) sc.retireAge = val;
     }
     persist();
-    // Don't full-render the starting-amount field while typing (keeps focus).
-    if (e.type === 'change' && t.dataset.stat !== 'startBalance') { render(); return; }
+    // On commit (blur / slider release) re-render so dependent panels (income
+    // breakdown, year-by-year) refresh. While typing/dragging we update in place.
+    if (e.type === 'change') { render(); return; }
     updateStatNumbers();
     if (state.activeTab === 'dashboard') drawChart();
   }
@@ -310,7 +323,7 @@
   function updateStatNumbers() {
     var d = UI.dashboardStats(state);
     var map = {
-      retireAge: d.age, returnPct: d.ret, start: d.start,
+      retireAge: d.age, returnPct: d.ret, start: d.start, wdRate: d.wdRate,
       balance: d.balance, monthly: d.monthly, annual: d.annual, ageEcho: d.age
     };
     document.querySelectorAll('[data-stat-val]').forEach(function (el) {
@@ -349,8 +362,9 @@
 
     if (t.dataset.scope === 'settings') {
       setByPath(state, t.dataset.path, value);
-      // Toggling a throttle on/off reveals or hides its detail row.
-      if (/returnThrottle\.(preEnabled|atEnabled)$/.test(t.dataset.path)) { persist(); render(); return; }
+      // Toggling a throttle, or switching withdrawal type, swaps which controls show.
+      if (/returnThrottle\.(preEnabled|atEnabled)$/.test(t.dataset.path) ||
+          t.dataset.path === 'settings.withdrawal.type') { persist(); render(); return; }
     } else {
       var s = editingScenario();
       if (!s) return;
@@ -418,7 +432,25 @@
       case 'toggle-edit': state.editingId = (state.editingId === id ? null : id); persist(); render(); break;
       case 'pill-edit': state.activeTab = 'scenarios'; state.editingId = id; persist(); render(); break;
       case 'focus-scenario': state.focusedId = id; persist(); render(); break;
+      case 'toggle-compare-mode':
+        state.compareMode = !state.compareMode;
+        if (state.compareMode && (!state.compareIds || !state.compareIds.length)) state.compareIds = [state.focusedId];
+        persist(); render(); break;
+      case 'toggle-compare': {
+        state.compareIds = state.compareIds || [];
+        var ci = state.compareIds.indexOf(id);
+        if (ci >= 0) state.compareIds.splice(ci, 1); else state.compareIds.push(id);
+        persist(); render(); break;
+      }
       case 'print-plan': window.print(); break;
+      case 'add-income-source':
+        state.settings.incomeSources = state.settings.incomeSources || [];
+        state.settings.incomeSources.push({ label: '', monthly: '', colaPct: 2.5, taxable: false, startAge: '' });
+        state.activeTab = 'settings';     // jump to the editor to fill it in
+        persist(); render(); break;
+      case 'remove-income-source':
+        (state.settings.incomeSources || []).splice(+btn.dataset.index, 1);
+        persist(); render(); break;
       case 'chip-select': {
         // Legacy: toggle a scenario in/out of the comparison set.
         var ix = state.selectedScenarioIds.indexOf(id);
@@ -667,6 +699,7 @@
     }
     applyTheme();
     render();
+    persist();        // save any one-time migrations (e.g. income sources)
     flagSaved(true);
   }
 

@@ -200,7 +200,9 @@
         interaction: { mode: 'nearest', intersect: false },
         scales: {
           x: { type: 'linear', title: { display: true, text: 'YOUR AGE', color: INK },
-               ticks: { stepSize: 5, color: INK }, grid: { color: GRID, drawTicks: false },
+               ticks: { color: INK, precision: 0, includeBounds: false, maxTicksLimit: 12,
+                        callback: function (v) { return Math.round(v); } },
+               grid: { color: GRID, drawTicks: false },
                border: { color: GRID } },
           y: { title: { display: true, text: real ? "PORTFOLIO BALANCE (TODAY'S $)" : 'PORTFOLIO BALANCE', color: INK },
                ticks: { color: INK, callback: function (v) { return '$' + (v / 1000).toLocaleString() + 'k'; } },
@@ -213,6 +215,7 @@
             backgroundColor: PANEL, borderColor: ACCENT, borderWidth: 1,
             titleColor: TITLE, bodyColor: INK, padding: 10, cornerRadius: 6,
             callbacks: {
+              title: function (items) { return items && items.length ? 'Age ' + Math.round(items[0].parsed.x) : ''; },
               label: function (c) {
                 if (c.dataset.label === '__events__') {
                   var p = c.raw;

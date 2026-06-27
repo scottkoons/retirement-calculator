@@ -240,6 +240,43 @@
     });
   }
 
+  // Fan chart for the Monte Carlo result: shaded 10th–90th percentile band with
+  // the median line, balance by age.
+  var mcChart = null;
+  function drawMcChart(mc) {
+    var canvas = document.getElementById('mcChart');
+    if (!canvas || typeof Chart === 'undefined') return;
+    if (mcChart) { mcChart.destroy(); mcChart = null; }
+    var INK = themeVar('--muted', '#aab6c8'), GRID = themeVar('--line', '#20293a'), ACCENT = themeVar('--cyan', '#f97316');
+    var labels = mc.bands.map(function (b) { return b.age; });
+    mcChart = new Chart(canvas.getContext('2d'), {
+      type: 'line',
+      data: {
+        labels: labels,
+        datasets: [
+          { label: '90th pct', data: mc.bands.map(function (b) { return b.p90; }), borderColor: hexToRgba('#f97316', 0.45), backgroundColor: 'transparent', borderWidth: 1, pointRadius: 0, fill: false, tension: 0.3 },
+          { label: '10th–90th percentile', data: mc.bands.map(function (b) { return b.p10; }), borderColor: hexToRgba('#f97316', 0.45), backgroundColor: hexToRgba('#f97316', 0.15), borderWidth: 1, pointRadius: 0, fill: '-1', tension: 0.3 },
+          { label: 'Median', data: mc.bands.map(function (b) { return b.p50; }), borderColor: ACCENT, backgroundColor: 'transparent', borderWidth: 2.5, pointRadius: 0, fill: false, tension: 0.3 }
+        ]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false, color: INK,
+        font: { family: "'JetBrains Mono', monospace" },
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { position: 'bottom', labels: { color: INK, usePointStyle: true, pointStyle: 'line', boxWidth: 20, padding: 12,
+            filter: function (it) { return it.text !== '90th pct'; } } },
+          tooltip: { callbacks: { title: function (i) { return 'Age ' + (i && i.length ? i[0].label : ''); },
+            label: function (c) { return c.dataset.label + ': ' + UI.fmtMoney(c.parsed.y); } } }
+        },
+        scales: {
+          x: { title: { display: true, text: 'YOUR AGE', color: INK }, ticks: { color: INK, maxTicksLimit: 12 }, grid: { color: GRID, drawTicks: false } },
+          y: { ticks: { color: INK, callback: function (v) { return '$' + (v / 1000).toLocaleString() + 'k'; } }, grid: { color: GRID, drawTicks: false } }
+        }
+      }
+    });
+  }
+
   /* ------------------------------ scenarios ------------------------------ */
   function newScenario() {
     return {
@@ -446,6 +483,19 @@
         persist(); render(); break;
       }
       case 'print-plan': window.print(); break;
+      case 'run-stress-test': {
+        var fsc = state.scenarios.filter(function (x) { return x.id === state.focusedId; })[0] || state.scenarios[0];
+        var host = document.getElementById('mc-results');
+        if (!fsc || !host) break;
+        host.innerHTML = '<p class="muted small" style="margin:.8rem 0 0">Running simulations…</p>';
+        // Defer so the "Running…" message paints before the (heavier) compute.
+        setTimeout(function () {
+          var mc = global.RetEngine.monteCarlo(fsc, state.settings, { now: state.now, trials: 500 });
+          var h = document.getElementById('mc-results');
+          if (h) { h.innerHTML = UI.renderStressResults(mc); drawMcChart(mc); }
+        }, 30);
+        break;
+      }
       case 'add-income-source':
         state.settings.incomeSources = state.settings.incomeSources || [];
         state.settings.incomeSources.push({ label: '', monthly: '', colaPct: 2.5, taxable: false, startAge: '' });

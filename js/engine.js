@@ -161,6 +161,17 @@
     return list;
   }
 
+  // Expected annual return at an age: return phases (if any) then the optional
+  // glide-path throttle override. The single source of truth for the rate.
+  function expectedReturn(ageYears, retireAge, baseReturnPct, phases, throttle) {
+    var r = (phases && phases.length) ? returnRateAt(ageYears, phases, baseReturnPct) : baseReturnPct;
+    if (throttle) {
+      if (throttle.atEnabled && ageYears >= retireAge) r = num(throttle.atRate, r);
+      else if (throttle.preEnabled && ageYears >= (retireAge - num(throttle.preYears, 0)) && ageYears < retireAge) r = num(throttle.preRate, r);
+    }
+    return r;
+  }
+
   function projectScenario(scenario, settings, opts) {
     opts = opts || {};
     settings = settings || {};
@@ -202,14 +213,11 @@
       var ageA = (absM - birthAbsA) / 12;
       var retired = absM >= retireAbs;
 
-      // 1. investment growth — rate may vary by age via return phases, then an
-      // optional glide-path throttle near/at retirement (overrides in its window).
-      var annualR = usePhases ? returnRateAt(ageA, phases, returnPct) : returnPct;
-      var th = settings.returnThrottle;
-      if (th) {
-        if (th.atEnabled && ageA >= retireAge) annualR = num(th.atRate, annualR);
-        else if (th.preEnabled && ageA >= (retireAge - num(th.preYears, 0)) && ageA < retireAge) annualR = num(th.preRate, annualR);
-      }
+      // 1. investment growth. Normally the expected return (phases + throttle);
+      // a Monte Carlo trial passes opts.yearReturns to inject a random sequence.
+      var annualR = (opts.yearReturns && opts.yearReturns[Math.floor(ageA)] != null)
+        ? opts.yearReturns[Math.floor(ageA)]
+        : expectedReturn(ageA, retireAge, returnPct, phases, settings.returnThrottle);
       var rate = monthlyRate(annualR);
       var preGrowth = balance;
       balance *= (1 + rate);
@@ -415,8 +423,79 @@
     };
   }
 
+  // A normally-distributed draw (Box–Muller).
+  function randNormal(mean, std) {
+    var u = 0, v = 0;
+    while (u === 0) u = Math.random();
+    while (v === 0) v = Math.random();
+    return mean + std * Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+  }
+  function pctile(sorted, p) {
+    if (!sorted.length) return 0;
+    var i = Math.min(sorted.length - 1, Math.max(0, Math.floor((p / 100) * sorted.length)));
+    return sorted[i];
+  }
+
+  // Monte Carlo stress test: run many trials with each year's return drawn from
+  // a normal distribution around the expected return (mean = phases/throttle
+  // return, stdev = volatility). Reports the share of trials where the money
+  // lasts to the end of the horizon, plus p10/p50/p90 balance bands by age.
+  function monteCarlo(scenario, settings, opts) {
+    opts = opts || {};
+    settings = settings || {};
+    var now = opts.now || { month: 5, year: 2026 };
+    var trials = opts.trials || 500;
+    var a = settings.assumptions || {};
+    var vol = num(opts.volatilityPct != null ? opts.volatilityPct : a.volatilityPct, 10);
+
+    var personA = settings.personA || {};
+    var birthAbsA = toAbs(num(personA.birthMonth, 1), num(personA.birthYear, now.year));
+    var nowAbs = toAbs(now.month, now.year);
+    var curAge = Math.max(0, Math.floor((nowAbs - birthAbsA) / 12));
+    var endAge = 95;
+    var retireAge = num(scenario.retireAge, 65);
+    var ov = scenario.assumptionsOverride || {};
+    var baseReturn = has(ov.returnPct) ? num(ov.returnPct) : num(a.returnPct, 6);
+    var phases = scenario.returnPhases || [];
+    var throttle = settings.returnThrottle;
+
+    // Expected return per integer age (the mean each yearly draw varies around).
+    var expByAge = {};
+    for (var ag = curAge; ag <= endAge; ag++) expByAge[ag] = expectedReturn(ag, retireAge, baseReturn, phases, throttle);
+
+    var successes = 0, endings = [], depletions = [], byAge = {};
+    for (var t = 0; t < trials; t++) {
+      var yr = {};
+      for (var ag2 = curAge; ag2 <= endAge; ag2++) yr[ag2] = Math.max(-95, randNormal(expByAge[ag2], vol));
+      var r = projectScenario(scenario, settings, { now: now, yearReturns: yr });
+      var depleted = r.summary.depletionAge != null;
+      if (!depleted) successes++; else depletions.push(r.summary.depletionAge);
+      // Once the money runs out it's $0, not negative — floor for sane stats/bands.
+      endings.push(Math.max(0, r.summary.finalBalance));
+      r.yearByYear.forEach(function (row) { (byAge[row.age] = byAge[row.age] || []).push(Math.max(0, row.balance)); });
+    }
+    endings.sort(function (x, y) { return x - y; });
+    depletions.sort(function (x, y) { return x - y; });
+    var bands = Object.keys(byAge).map(Number).sort(function (x, y) { return x - y; }).map(function (age) {
+      var arr = byAge[age].sort(function (x, y) { return x - y; });
+      return { age: age, p10: pctile(arr, 10), p50: pctile(arr, 50), p90: pctile(arr, 90) };
+    });
+    return {
+      trials: trials, volatilityPct: vol,
+      successPct: Math.round((successes / trials) * 100),
+      failCount: trials - successes,
+      medianEnding: pctile(endings, 50),
+      p10End: pctile(endings, 10),
+      p90End: pctile(endings, 90),
+      medianDepletionAge: depletions.length ? pctile(depletions, 50) : null,
+      earliestDepletionAge: depletions.length ? depletions[0] : null,
+      bands: bands
+    };
+  }
+
   var api = {
     projectScenario: projectScenario,
+    monteCarlo: monteCarlo,
     incomeBreakdown: incomeBreakdown,
     clampContributionPeriods: clampContributionPeriods,
     contributionStats: contributionStats,

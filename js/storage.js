@@ -15,7 +15,7 @@
         personA: { name: '', birthMonth: 1, birthYear: 1960, ss: { 62: '', 65: '', 66: '', 67: '', 70: '' } },
         personB: { name: '', birthMonth: 1, birthYear: 1962, ss: { 62: '', 65: '', 66: '', 67: '', 70: '' } },
         vaDisability: { monthly: '' },
-        assumptions: { returnPct: 6, inflationPct: 3, ssColaPct: 2.5, effectiveTaxPct: 12 },
+        assumptions: { returnPct: 6, inflationPct: 3, ssColaPct: 2.5, effectiveTaxPct: 12, volatilityPct: 10 },
         // Optional glide path: taper return before/at retirement. Off by default.
         returnThrottle: { preEnabled: false, preYears: 3, preRate: 6, atEnabled: false, atRate: 5 },
         // Withdrawal strategy is global so the same rule compares across scenarios.

@@ -99,7 +99,8 @@
         '<div class="field"><label>Inflation %</label>' + numInput('settings', 'settings.assumptions.inflationPct', a.inflationPct, '%', 'pct') + '</div>' +
         '<div class="field"><label>Social Security COLA %</label>' + numInput('settings', 'settings.assumptions.ssColaPct', a.ssColaPct, '%', 'pct') + '</div>' +
         '<div class="field"><label>Effective tax rate %</label>' + numInput('settings', 'settings.assumptions.effectiveTaxPct', a.effectiveTaxPct, '%', 'pct') + '</div>' +
-      '</div><p class="muted small">Tax applies to Social Security and any income you mark taxable.</p></div>' +
+        '<div class="field"><label>Return volatility % <span class="muted">(stress test)</span></label>' + numInput('settings', 'settings.assumptions.volatilityPct', a.volatilityPct == null ? 10 : a.volatilityPct, '%', 'pct') + '</div>' +
+      '</div><p class="muted small">Tax applies to Social Security and any income you mark taxable. Volatility is the year-to-year swing used by the stress test (≈6% conservative, ≈10% balanced, ≈15%+ aggressive).</p></div>' +
       incomeSourcesCard(s.incomeSources || []) +
       returnThrottleCard(s.returnThrottle || {}) +
     '</div>';
@@ -651,9 +652,43 @@
     '</div>';
   }
 
-  // "Control panel" of scenario chips across the top — click to add/remove a
-  // scenario from the comparison. Replaces the old checkbox picker and the
-  // header search bar.
+  // Monte Carlo stress test card — a button that runs the simulation and an
+  // empty container the results render into (filled by app.js on click).
+  function stressTestCard(state) {
+    var s = primaryScenario(state);
+    if (!s) return '';
+    return '<div class="card mc-card">' +
+      '<div class="ib-cardhead"><h3>Stress test <span class="ib-sub">Monte Carlo · ' + esc(s.name) + '</span></h3>' +
+        '<button class="btn small primary" data-action="run-stress-test">Run stress test</button></div>' +
+      '<p class="muted small" style="margin:.2rem 0 0">Runs hundreds of randomized market simulations around your return assumptions and shows how often your money lasts to age 95 — the real test that a single average return hides.</p>' +
+      '<div id="mc-results" class="mc-results"></div>' +
+    '</div>';
+  }
+
+  function mcStat(label, val) {
+    return '<div class="mc-stat"><div class="mc-stat-val mono">' + esc(val) + '</div><div class="mc-stat-lbl">' + label + '</div></div>';
+  }
+  // Renders the Monte Carlo result block (success %, stats, fan-chart canvas).
+  function renderStressResults(mc) {
+    var cls = mc.successPct >= 85 ? 'good' : (mc.successPct >= 70 ? 'warn' : 'bad');
+    var depl = mc.failCount
+      ? 'In ' + Math.round((mc.failCount / mc.trials) * 100) + '% of runs the money runs out — typically around age ' + mc.medianDepletionAge +
+        (mc.earliestDepletionAge ? ' (as early as ' + mc.earliestDepletionAge + ')' : '') + '.'
+      : 'The money lasted to age 95 in every simulation.';
+    return '<div class="mc-top">' +
+        '<div class="mc-score ' + cls + '"><div class="mc-pct">' + mc.successPct + '%</div>' +
+          '<div class="mc-pctlbl">chance money lasts to 95</div></div>' +
+        '<div class="mc-stats">' +
+          mcStat('Median ending balance · age 95', shortMoneyMM(mc.medianEnding)) +
+          mcStat('Tough markets · 10th pct', mc.p10End > 0 ? shortMoneyMM(mc.p10End) : 'runs out') +
+          mcStat('Great markets · 90th pct', shortMoneyMM(mc.p90End)) +
+        '</div>' +
+      '</div>' +
+      '<p class="muted small mc-note">' + depl + ' Based on ' + mc.trials + ' simulations · ±' + oneDecimal(mc.volatilityPct) + '% annual volatility (set in Settings).</p>' +
+      '<div class="mc-fanwrap"><canvas id="mcChart"></canvas></div>' +
+      '<p class="muted small" style="text-align:center;margin:.5rem 0 0">Shaded band = 10th–90th percentile of outcomes · solid line = median</p>';
+  }
+
   // Top strip of scenario pills. Click a pill to FOCUS that scenario (its
   // numbers fill the dashboard); the focused one is highlighted. Pills are
   // draggable to reorder and each carries a duplicate button.
@@ -762,6 +797,7 @@
         incomeBreakdownCard(d) +
       '</div>' +
       chartCard(state) +
+      stressTestCard(state) +
       yearByYearCard(state, d) +
       '<div class="card">' + table + '</div>' +
     '</div>';
@@ -813,6 +849,7 @@
     renderScenarios: renderScenarios,
     renderDashboard: renderDashboard,
     dashboardStats: dashboardStats,
+    renderStressResults: renderStressResults,
     renderMiniSummary: renderMiniSummary,
     refreshComputedCells: refreshComputedCells,
     fmtMoney: fmtMoney,

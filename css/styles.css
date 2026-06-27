@@ -940,10 +940,16 @@ p.muted.small { line-height: 1.55; }
 
   /* Hide interactive chrome that doesn't belong on paper. */
   .sidebar, .dash-top-actions, .chart-tools, .zoom-hint, .stat-slider,
-  .scn-copy, .scn-chip.add, .app-footer { display: none !important; }
+  .scn-copy, .scn-chip.add, .app-footer,
+  .ib-cardhead button, .ib-x, .seg-toggle, .wc-type, .wc-tax { display: none !important; }
   /* Only the focused scenario's name remains as a heading. */
   .scn-chip:not(.on) { display: none; }
   .scn-chip { border-color: #d1d5db; }
+  /* Flatten editable fields into plain printed text. */
+  .stat-edit-input { border: none !important; padding: 0 !important; background: none !important; }
+  .wc-row { margin-top: .3rem; }
+  /* Drag handles / row remove buttons in tables aren't useful on paper. */
+  .td-grip, .btn-x { display: none !important; }
 
   .card, .stat-card, .result-card, .ib-total, .chart-card { box-shadow: none; border-color: #e5e7eb; }
   .dash-cols { grid-template-columns: 1fr; }     /* stack for the page */
